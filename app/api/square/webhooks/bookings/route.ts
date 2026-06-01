@@ -248,6 +248,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           hasSellerNote: !!fullBooking.seller_note,
           sellerNoteLength: fullBooking.seller_note?.length || 0,
         });
+
+        if (fullBooking.order_id) {
+          parsedBooking.orderId = fullBooking.order_id;
+        }
         
         // Check if seller_note contains add-ons (Square website puts them there)
         if (fullBooking.seller_note && fullBooking.seller_note.includes('ADD-ONS REQUESTED')) {

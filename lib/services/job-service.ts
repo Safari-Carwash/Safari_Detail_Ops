@@ -13,11 +13,47 @@ import type { ParsedBooking } from '../square/booking-parser';
 import { fetchCustomerWithRetry, isCacheStale, toCustomerCached } from '../square/customers-api';
 import { sendCompletionSms } from './sms-service';
 import { fetchCatalogObject, listAddons } from '../square/catalog-api';
+import { retrieveOrder, extractNonAddonAmount } from '../square/orders-api';
 
 /**
  * Tennessee sales tax rate
  */
 const TAX_RATE = 0.0975;
+
+/**
+ * Extract deposit and related Square order metadata from a booking's Square order.
+ *
+ * @param booking - Parsed booking from Square webhook or API
+ */
+async function enrichBookingDepositFromLinkedOrder(booking: ParsedBooking) {
+  if (!booking.orderId) {
+    return {};
+  }
+
+  try {
+    const order = await retrieveOrder(booking.orderId);
+    if (!order) {
+      return {};
+    }
+
+    const depositAmountCents = extractNonAddonAmount(order) || order.total_money?.amount;
+    const depositCurrency = order.total_money?.currency;
+    const depositPaymentStatus = order.state;
+
+    return {
+      squareOrderId: order.id,
+      depositAmountCents,
+      depositCurrency,
+      depositPaymentStatus,
+    };
+  } catch (error: any) {
+    console.warn('[JOB SERVICE] Failed to enrich deposit from order', {
+      orderId: booking.orderId,
+      error: error?.message || error,
+    });
+    return {};
+  }
+}
 
 /**
  * Calculate payment amount from booking with service and add-ons
@@ -168,6 +204,7 @@ export async function createJobFromBooking(booking: ParsedBooking): Promise<Job>
   
   // Calculate payment amount from service + add-ons + tax
   const amountCents = await calculateBookingAmount(booking.serviceVariationId, booking.notes);
+  const depositMeta = await enrichBookingDepositFromLinkedOrder(booking);
   
   const mappedStatus = mapBookingStatusToJobStatus(booking.status);
   const isCancelled = mappedStatus === WorkStatus.CANCELLED;
@@ -182,6 +219,11 @@ export async function createJobFromBooking(booking: ParsedBooking): Promise<Job>
     serviceType: booking.serviceType || 'Detail Service',
     status: mappedStatus,
     bookingId: booking.bookingId,
+    orderId: booking.orderId,
+    squareOrderId: depositMeta.squareOrderId,
+    depositAmountCents: depositMeta.depositAmountCents,
+    depositCurrency: depositMeta.depositCurrency,
+    depositPaymentStatus: depositMeta.depositPaymentStatus,
     appointmentTime: booking.appointmentTime,
     photos: [],
     photosMeta: [], // Phase 3: Initialize empty photo metadata
@@ -227,6 +269,7 @@ export async function updateJobFromBooking(
   }
   
   const displayName = customerCached?.name || booking.customerName || currentJob?.customerName;
+  const depositMeta = await enrichBookingDepositFromLinkedOrder(booking);
   
   // Recalculate payment amount if not yet paid (in case add-ons or service changed)
   let paymentUpdate: Partial<Job>['payment'] | undefined;
@@ -254,6 +297,7 @@ export async function updateJobFromBooking(
     updatedBy: 'square-webhook',
     customerCached, // Phase 3: Update cached customer data
     payment: paymentUpdate,
+    ...depositMeta,
     // Add cancellation metadata if newly cancelled (idempotent)
     ...(isCancelled && !wasAlreadyCancelled && {
       cancelledAt: new Date().toISOString(),

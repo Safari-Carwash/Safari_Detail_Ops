@@ -62,6 +62,7 @@ async function syncBooking(bookingId: string) {
       locationId: squareBooking.location_id,
       sellerId: squareBooking.seller_id,
       version: squareBooking.version,
+      orderId: squareBooking.order_id,
     };
 
     // 3. Enrich with service details

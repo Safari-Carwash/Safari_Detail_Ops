@@ -14,6 +14,10 @@ interface Job {
   jobId: string;
   bookingId?: string;
   orderId?: string;
+  squareOrderId?: string;
+  depositAmountCents?: number;
+  depositCurrency?: string;
+  depositPaymentStatus?: string;
   customerName: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -263,6 +267,10 @@ export default function JobDetail() {
           jobId: apiJob.jobId,
           bookingId: apiJob.bookingId,
           orderId: apiJob.orderId,
+          squareOrderId: apiJob.squareOrderId,
+          depositAmountCents: apiJob.depositAmountCents,
+          depositCurrency: apiJob.depositCurrency,
+          depositPaymentStatus: apiJob.depositPaymentStatus,
           customerName: apiJob.customerCached?.name || apiJob.customerName || 'Unknown Customer',
           customerPhone: apiJob.customerCached?.phone || apiJob.customerPhone,
           customerEmail: apiJob.customerCached?.email || apiJob.customerEmail,
@@ -359,6 +367,10 @@ export default function JobDetail() {
         jobId: apiJob.jobId,
         bookingId: apiJob.bookingId,
         orderId: apiJob.orderId,
+        squareOrderId: apiJob.squareOrderId,
+        depositAmountCents: apiJob.depositAmountCents,
+        depositCurrency: apiJob.depositCurrency,
+        depositPaymentStatus: apiJob.depositPaymentStatus,
         customerName: apiJob.customerCached?.name || apiJob.customerName || 'Unknown Customer',
         customerPhone: apiJob.customerCached?.phone || apiJob.customerPhone,
         customerEmail: apiJob.customerCached?.email || apiJob.customerEmail,
@@ -1660,6 +1672,26 @@ export default function JobDetail() {
         {/* Payment */}
         <section className="bg-white rounded-2xl p-6" style={{ boxShadow: 'var(--sf-shadow)', border: '1px solid var(--sf-border)' }}>
           <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--sf-ink)' }}>💳 {t('payment.title')}</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
+              <div className="text-sm text-gray-500">Total Job Amount</div>
+              <div className="text-xl font-semibold mt-2">
+                ${((job.payment?.amountCents || 0) / 100).toFixed(2)}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
+              <div className="text-sm text-gray-500">Deposit Collected</div>
+              <div className="text-xl font-semibold mt-2">
+                {job.depositAmountCents != null ? `$${(job.depositAmountCents / 100).toFixed(2)}` : 'Not available'}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
+              <div className="text-sm text-gray-500">Remaining Balance Due</div>
+              <div className="text-xl font-semibold mt-2">
+                ${((job.depositAmountCents != null ? Math.max(0, (job.payment?.amountCents || 0) - job.depositAmountCents) : (job.payment?.amountCents || 0)) / 100).toFixed(2)}
+              </div>
+            </div>
+          </div>
           <div className="flex items-center justify-between mb-4">
             <div className="flex-1">
               <div className="text-sm" style={{ color: 'var(--sf-muted)' }}>{t('payment.amount')}</div>
@@ -1744,6 +1776,13 @@ export default function JobDetail() {
           {job.payment?.paidAt && job.payment?.paidBy && (
             <div className="text-xs text-gray-600 mb-3">
               Marked paid by {job.payment.paidBy.name} on {new Date(job.payment.paidAt).toLocaleString()}
+            </div>
+          )}
+
+          {job.squareOrderId && (
+            <div className="text-xs text-gray-600 mb-3">
+              Deposit order: {job.squareOrderId}
+              {job.depositPaymentStatus ? ` • ${job.depositPaymentStatus}` : ''}
             </div>
           )}
 

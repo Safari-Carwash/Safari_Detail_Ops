@@ -347,3 +347,19 @@ export function extractNonAddonLineItems(order: SquareOrder): OrderLineItem[] {
   
   return order.line_items.filter(item => !isAddonLineItem(item));
 }
+
+/**
+ * Extract the total amount for non-add-on line items from an order.
+ *
+ * @param order - Square Order
+ * @returns Total amount in cents for service-related line items
+ */
+export function extractNonAddonAmount(order: SquareOrder): number {
+  if (!order.line_items) {
+    return 0;
+  }
+
+  return order.line_items
+    .filter(item => !isAddonLineItem(item))
+    .reduce((sum, item) => sum + (item.base_price_money?.amount || 0), 0);
+}

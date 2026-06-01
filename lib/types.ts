@@ -288,6 +288,10 @@ export interface Job {
   workStatus?: WorkStatus; // Phase 3: Alias for status (for backward compatibility)
   bookingId?: string; // Square booking ID
   orderId?: string; // Square Order ID (for add-ons)
+  squareOrderId?: string; // Square Order ID for booking deposit/payment
+  depositAmountCents?: number; // Amount collected at booking time
+  depositCurrency?: string;
+  depositPaymentStatus?: string;
   appointmentTime?: string;
   photos?: string[]; // S3 keys (legacy)
   photosMeta?: PhotoMeta[]; // Phase 3: Enhanced photo metadata

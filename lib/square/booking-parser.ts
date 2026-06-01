@@ -23,6 +23,7 @@ export interface ParsedBooking {
   locationId?: string;
   sellerId?: string;
   version?: number;
+  orderId?: string; // Square order ID associated with the booking (deposit/payment)
 }
 
 /**
