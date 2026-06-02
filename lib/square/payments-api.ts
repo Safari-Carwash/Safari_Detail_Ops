@@ -145,5 +145,3 @@ export async function findDepositPaymentForBooking(booking: {
 
   return findDepositPayment(payments, booking.orderId);
 }
-
-export { findDepositPaymentForBooking };
