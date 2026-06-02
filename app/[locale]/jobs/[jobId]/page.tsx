@@ -15,6 +15,9 @@ interface Job {
   bookingId?: string;
   orderId?: string;
   squareOrderId?: string;
+  depositPaymentId?: string;
+  depositReceiptNumber?: string;
+  depositPaymentNote?: string;
   depositAmountCents?: number;
   depositCurrency?: string;
   depositPaymentStatus?: string;
@@ -268,6 +271,9 @@ export default function JobDetail() {
           bookingId: apiJob.bookingId,
           orderId: apiJob.orderId,
           squareOrderId: apiJob.squareOrderId,
+          depositPaymentId: apiJob.depositPaymentId,
+          depositReceiptNumber: apiJob.depositReceiptNumber,
+          depositPaymentNote: apiJob.depositPaymentNote,
           depositAmountCents: apiJob.depositAmountCents,
           depositCurrency: apiJob.depositCurrency,
           depositPaymentStatus: apiJob.depositPaymentStatus,
@@ -368,6 +374,9 @@ export default function JobDetail() {
         bookingId: apiJob.bookingId,
         orderId: apiJob.orderId,
         squareOrderId: apiJob.squareOrderId,
+        depositPaymentId: apiJob.depositPaymentId,
+        depositReceiptNumber: apiJob.depositReceiptNumber,
+        depositPaymentNote: apiJob.depositPaymentNote,
         depositAmountCents: apiJob.depositAmountCents,
         depositCurrency: apiJob.depositCurrency,
         depositPaymentStatus: apiJob.depositPaymentStatus,
@@ -1692,6 +1701,11 @@ export default function JobDetail() {
               </div>
             </div>
           </div>
+          {job.depositAmountCents == null && (
+            <div className="text-sm text-[#92400E] bg-[#FEF3C7] p-3 rounded-lg mb-4 border border-[#FDE68A]">
+              Deposit not found — verify in Square.
+            </div>
+          )}
           <div className="flex items-center justify-between mb-4">
             <div className="flex-1">
               <div className="text-sm" style={{ color: 'var(--sf-muted)' }}>{t('payment.amount')}</div>
@@ -1779,10 +1793,23 @@ export default function JobDetail() {
             </div>
           )}
 
-          {job.squareOrderId && (
-            <div className="text-xs text-gray-600 mb-3">
-              Deposit order: {job.squareOrderId}
-              {job.depositPaymentStatus ? ` • ${job.depositPaymentStatus}` : ''}
+          {(job.squareOrderId || job.depositPaymentId || job.depositReceiptNumber) && (
+            <div className="text-xs text-gray-600 mb-3 space-y-1">
+              {job.squareOrderId && (
+                <div>
+                  Deposit order: {job.squareOrderId}
+                  {job.depositPaymentStatus ? ` • ${job.depositPaymentStatus}` : ''}
+                </div>
+              )}
+              {job.depositPaymentId && (
+                <div>
+                  Deposit payment: {job.depositPaymentId}
+                  {job.depositReceiptNumber ? ` • Receipt #${job.depositReceiptNumber}` : ''}
+                </div>
+              )}
+              {job.depositPaymentNote && (
+                <div>Note: {job.depositPaymentNote}</div>
+              )}
             </div>
           )}
 

@@ -289,6 +289,9 @@ export interface Job {
   bookingId?: string; // Square booking ID
   orderId?: string; // Square Order ID (for add-ons)
   squareOrderId?: string; // Square Order ID for booking deposit/payment
+  depositPaymentId?: string;
+  depositReceiptNumber?: string;
+  depositPaymentNote?: string;
   depositAmountCents?: number; // Amount collected at booking time
   depositCurrency?: string;
   depositPaymentStatus?: string;

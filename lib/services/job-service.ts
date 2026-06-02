@@ -14,6 +14,7 @@ import { fetchCustomerWithRetry, isCacheStale, toCustomerCached } from '../squar
 import { sendCompletionSms } from './sms-service';
 import { fetchCatalogObject, listAddons } from '../square/catalog-api';
 import { retrieveOrder, extractNonAddonAmount } from '../square/orders-api';
+import { findDepositPaymentForBooking } from '../square/payments-api';
 
 /**
  * Tennessee sales tax rate
@@ -21,38 +22,92 @@ import { retrieveOrder, extractNonAddonAmount } from '../square/orders-api';
 const TAX_RATE = 0.0975;
 
 /**
+ * Parse a deposit amount from booking notes.
+ *
+ * @param notes - Booking notes or seller notes from Square
+ */
+function parseDepositAmountFromNotes(notes?: string): number | undefined {
+  if (!notes) {
+    return undefined;
+  }
+
+  const match = notes.match(/DEPOSIT\s+CHARGED:\s*\$?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+  if (!match || !match[1]) {
+    return undefined;
+  }
+
+  const normalized = match[1].replace(/,/g, '');
+  const amount = Number(normalized);
+  return Number.isNaN(amount) ? undefined : Math.round(amount * 100);
+}
+
+/**
  * Extract deposit and related Square order metadata from a booking's Square order.
  *
  * @param booking - Parsed booking from Square webhook or API
  */
-async function enrichBookingDepositFromLinkedOrder(booking: ParsedBooking) {
-  if (!booking.orderId) {
-    return {};
-  }
+async function enrichBookingDepositFromSquareData(booking: ParsedBooking) {
+  let squareOrderId: string | undefined;
+  let depositAmountCents: number | undefined;
+  let depositCurrency: string | undefined;
+  let depositPaymentStatus: string | undefined;
+  let depositPaymentId: string | undefined;
+  let depositReceiptNumber: string | undefined;
+  let depositPaymentNote: string | undefined;
 
-  try {
-    const order = await retrieveOrder(booking.orderId);
-    if (!order) {
-      return {};
+  if (booking.orderId) {
+    try {
+      const order = await retrieveOrder(booking.orderId);
+      if (order) {
+        squareOrderId = order.id;
+        depositAmountCents = extractNonAddonAmount(order) || order.total_money?.amount;
+        depositCurrency = order.total_money?.currency;
+        depositPaymentStatus = order.state;
+      }
+    } catch (error: any) {
+      console.warn('[JOB SERVICE] Failed to enrich deposit from order', {
+        orderId: booking.orderId,
+        error: error?.message || error,
+      });
     }
-
-    const depositAmountCents = extractNonAddonAmount(order) || order.total_money?.amount;
-    const depositCurrency = order.total_money?.currency;
-    const depositPaymentStatus = order.state;
-
-    return {
-      squareOrderId: order.id,
-      depositAmountCents,
-      depositCurrency,
-      depositPaymentStatus,
-    };
-  } catch (error: any) {
-    console.warn('[JOB SERVICE] Failed to enrich deposit from order', {
-      orderId: booking.orderId,
-      error: error?.message || error,
-    });
-    return {};
   }
+
+  if (depositAmountCents == null) {
+    try {
+      const payment = await findDepositPaymentForBooking(booking);
+      if (payment) {
+        depositAmountCents = payment.amount_money?.amount;
+        depositCurrency = payment.amount_money?.currency;
+        depositPaymentStatus = payment.status;
+        depositPaymentId = payment.id;
+        depositReceiptNumber = payment.receipt_number;
+        depositPaymentNote = payment.note;
+      }
+    } catch (error: any) {
+      console.warn('[JOB SERVICE] Failed to enrich deposit from payment', {
+        bookingId: booking.bookingId,
+        error: error?.message || error,
+      });
+    }
+  }
+
+  if (depositAmountCents == null) {
+    depositAmountCents = parseDepositAmountFromNotes(booking.notes);
+    if (depositAmountCents != null) {
+      depositCurrency = depositCurrency || 'USD';
+      depositPaymentStatus = depositPaymentStatus || 'UNKNOWN';
+    }
+  }
+
+  return {
+    ...(squareOrderId ? { squareOrderId } : {}),
+    ...(depositPaymentId ? { depositPaymentId } : {}),
+    ...(depositReceiptNumber ? { depositReceiptNumber } : {}),
+    ...(depositPaymentNote ? { depositPaymentNote } : {}),
+    ...(depositAmountCents != null ? { depositAmountCents } : {}),
+    ...(depositCurrency ? { depositCurrency } : {}),
+    ...(depositPaymentStatus ? { depositPaymentStatus } : {}),
+  };
 }
 
 /**
@@ -204,7 +259,7 @@ export async function createJobFromBooking(booking: ParsedBooking): Promise<Job>
   
   // Calculate payment amount from service + add-ons + tax
   const amountCents = await calculateBookingAmount(booking.serviceVariationId, booking.notes);
-  const depositMeta = await enrichBookingDepositFromLinkedOrder(booking);
+  const depositMeta = await enrichBookingDepositFromSquareData(booking);
   
   const mappedStatus = mapBookingStatusToJobStatus(booking.status);
   const isCancelled = mappedStatus === WorkStatus.CANCELLED;
@@ -269,7 +324,7 @@ export async function updateJobFromBooking(
   }
   
   const displayName = customerCached?.name || booking.customerName || currentJob?.customerName;
-  const depositMeta = await enrichBookingDepositFromLinkedOrder(booking);
+  const depositMeta = await enrichBookingDepositFromSquareData(booking);
   
   // Recalculate payment amount if not yet paid (in case add-ons or service changed)
   let paymentUpdate: Partial<Job>['payment'] | undefined;
