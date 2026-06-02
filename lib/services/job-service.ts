@@ -91,13 +91,22 @@ async function enrichBookingDepositFromSquareData(booking: ParsedBooking) {
     }
   }
 
-  if (depositAmountCents == null) {
-    depositAmountCents = parseDepositAmountFromNotes(booking.notes);
-    if (depositAmountCents != null) {
-      depositCurrency = depositCurrency || 'USD';
-      depositPaymentStatus = depositPaymentStatus || 'UNKNOWN';
-    }
-  }
+  // IMPORTANT: Do NOT parse deposit amount from notes text like "CARD ON FILE" or "$20 protection"
+  // Only accept deposits from actual Square Payment transactions or Order data
+  // Parsing notes is unreliable and incorrectly treats card-on-file text as collected deposit
+
+  console.log('[JOB SERVICE] Deposit enrichment complete', {
+    bookingId: booking.bookingId,
+    orderId: booking.orderId,
+    squareOrderId,
+    depositAmountCents,
+    depositPaymentId,
+    depositPaymentNote,
+    depositPaymentStatus,
+    source: depositPaymentId ? 'square_payment' : 
+            squareOrderId ? 'square_order' : 
+            'not_found',
+  });
 
   return {
     ...(squareOrderId ? { squareOrderId } : {}),

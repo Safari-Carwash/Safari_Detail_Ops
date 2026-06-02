@@ -4,7 +4,7 @@
  * Usage:
  *   APP_ENV=prod npx tsx scripts/create-prod-managers.ts
  * 
- * This script creates 4 manager users in the production environment.
+ * This script creates 8 manager users in the production environment.
  */
 
 import { createUser, getUserByEmail } from '../lib/services/user-service';
@@ -30,6 +30,26 @@ const PRODUCTION_MANAGERS = [
   {
     email: 'toni@thesafaricarwash.com',
     name: 'Toni',
+    password: 'detailops',
+  },
+  {
+    email: 'aaron@thesafaricarwash.com',
+    name: 'Aaron',
+    password: 'detailops',
+  },
+  {
+    email: 'brandon@thesafaricarwash.com',
+    name: 'Brandon',
+    password: 'detailops',
+  },
+  {
+    email: 'jesus@thesafaricarwash.com',
+    name: 'Jesus',
+    password: 'detailops',
+  },
+  {
+    email: 'chewy@thesafaricarwash.com',
+    name: 'Chewy',
     password: 'detailops',
   },
 ];

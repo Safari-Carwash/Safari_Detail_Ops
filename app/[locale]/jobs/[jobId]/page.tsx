@@ -1703,7 +1703,9 @@ export default function JobDetail() {
           </div>
           {job.depositAmountCents == null && (
             <div className="text-sm text-[#92400E] bg-[#FEF3C7] p-3 rounded-lg mb-4 border border-[#FDE68A]">
-              Deposit not found — verify in Square.
+              {job.notes?.includes('CARD ON FILE') 
+                ? 'Card on file stored — no payment charged yet'
+                : 'No deposit payment found in Square. Verify customer payment status.'}
             </div>
           )}
           <div className="flex items-center justify-between mb-4">
