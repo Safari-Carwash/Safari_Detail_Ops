@@ -272,6 +272,7 @@ export interface CustomerCached {
  */
 export interface Job {
   jobId: string;
+  jobNumber?: number; // Unique 5-digit job number (10001, 10002, etc.)
   customerId: string;
   customerName: string;
   customerEmail?: string;

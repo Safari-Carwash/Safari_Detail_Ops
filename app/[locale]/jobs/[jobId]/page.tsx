@@ -12,6 +12,7 @@ import EditBookingModal from '@/app/components/EditBookingModal';
 
 interface Job {
   jobId: string;
+  jobNumber?: number; // Unique job number (10001, 10002, etc.)
   bookingId?: string;
   orderId?: string;
   squareOrderId?: string;
@@ -1135,6 +1136,13 @@ export default function JobDetail() {
       </header>
 
       <main className="container mx-auto px-4 py-6 max-w-4xl">
+        {/* Job Number Display */}
+        {job?.jobNumber && (
+          <div className="bg-[#F47C20] rounded-2xl p-4 mb-6 text-center">
+            <p className="text-white text-2xl font-bold">Job #{String(job.jobNumber).padStart(5, '0')}</p>
+          </div>
+        )}
+        
         {/* Customer Info */}
         <section className="bg-white rounded-2xl p-6 mb-6" style={{ boxShadow: 'var(--sf-shadow)', border: '1px solid var(--sf-border)' }}>
           <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--sf-ink)' }}>{t('customer.title')}</h2>

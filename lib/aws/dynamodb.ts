@@ -13,7 +13,8 @@ import {
   UpdateCommand, 
   QueryCommand,
   ScanCommand,
-  DeleteCommand 
+  DeleteCommand,
+  TransactWriteCommand 
 } from '@aws-sdk/lib-dynamodb';
 import { getConfig } from '../config';
 import type { Job, WorkStatus } from '../types';
@@ -41,6 +42,82 @@ function getDynamoClient(): DynamoDBDocumentClient {
   }
   
   return dynamoClient;
+}
+
+/**
+ * Get or initialize the job number counter
+ * Counter document structure: { id: 'detailOpsJobNumberCounter', counter: 10000 }
+ */
+export async function getJobNumberCounter(): Promise<number> {
+  const client = getDynamoClient();
+  const config = getConfig();
+  
+  const result = await client.send(new GetCommand({
+    TableName: config.aws.dynamodb.jobsTable,
+    Key: { jobId: 'detailOpsJobNumberCounter' },
+  }));
+  
+  if (!result.Item) {
+    // Counter doesn't exist, try to create it
+    try {
+      await client.send(new PutCommand({
+        TableName: config.aws.dynamodb.jobsTable,
+        Item: {
+          jobId: 'detailOpsJobNumberCounter',
+          counter: 10000,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        ConditionExpression: 'attribute_not_exists(jobId)',
+      }));
+      console.log('[JOB NUMBER] Counter initialized to 10000');
+      return 10000;
+    } catch (error: any) {
+      // If creation fails due to race condition, try to read again
+      if (error.name === 'ConditionalCheckFailedException') {
+        console.log('[JOB NUMBER] Counter already created by another process, reading again');
+        const retryResult = await client.send(new GetCommand({
+          TableName: config.aws.dynamodb.jobsTable,
+          Key: { jobId: 'detailOpsJobNumberCounter' },
+        }));
+        return (retryResult.Item as any)?.counter || 10000;
+      }
+      throw error;
+    }
+  }
+  
+  return (result.Item as any).counter || 10000;
+}
+
+/**
+ * Increment job number counter and return next job number (10001, 10002, etc.)
+ * Uses DynamoDB atomic increment to prevent duplicate job numbers
+ */
+export async function incrementJobNumberCounter(): Promise<number> {
+  const client = getDynamoClient();
+  const config = getConfig();
+  
+  // First, ensure counter exists
+  await getJobNumberCounter();
+  
+  // Atomically increment the counter
+  const result = await client.send(new UpdateCommand({
+    TableName: config.aws.dynamodb.jobsTable,
+    Key: { jobId: 'detailOpsJobNumberCounter' },
+    UpdateExpression: 'SET #counter = #counter + :inc, #updatedAt = :now',
+    ExpressionAttributeNames: {
+      '#counter': 'counter',
+      '#updatedAt': 'updatedAt',
+    },
+    ExpressionAttributeValues: {
+      ':inc': 1,
+      ':now': new Date().toISOString(),
+    },
+    ReturnValues: 'ALL_NEW',
+  }));
+  
+  const newCounter = (result.Attributes as any).counter || 10001;
+  return newCounter;
 }
 
 /**

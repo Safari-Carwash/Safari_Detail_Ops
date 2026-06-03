@@ -10,6 +10,7 @@ import type { Locale } from '@/i18n';
 
 interface Job {
   jobId: string;
+  jobNumber?: number; // Unique job number (10001, 10002, etc.)
   customerName: string;
   vehicleInfo?: {
     year?: string;
@@ -215,7 +216,7 @@ export default function CalendarPage() {
                           href={`/${locale}/jobs/${job.jobId}`}
                           className="block text-[10px] sm:text-xs bg-primary-100 text-primary-800 rounded px-1 sm:px-2 py-0.5 sm:py-1 hover:bg-primary-200 transition truncate"
                         >
-                          {job.customerName}
+                          {job.jobNumber && `Job #${String(job.jobNumber).padStart(5, '0')} - `}{job.customerName}
                         </Link>
                       ))}
                       {dayJobs.length > 3 && (

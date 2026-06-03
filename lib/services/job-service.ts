@@ -285,6 +285,17 @@ export async function calculateBookingAmount(
 }
 
 /**
+ * Generate next unique job number (10001, 10002, etc.)
+ * 
+ * Uses atomic counter increment to prevent duplicates when jobs are created simultaneously
+ */
+export async function generateJobNumber(): Promise<number> {
+  const jobNumber = await dynamodb.incrementJobNumberCounter();
+  console.log('[JOB SERVICE] Generated job number', { jobNumber });
+  return jobNumber;
+}
+
+/**
  * Create a job from a Square booking (Phase 3: with customer caching)
  * 
  * Uses booking ID as job ID for consistency and idempotency
@@ -293,8 +304,12 @@ export async function createJobFromBooking(booking: ParsedBooking): Promise<Job>
   // Use booking ID as job ID for idempotency (matches manager phone booking behavior)
   const jobId = booking.bookingId;
   
+  // Generate unique job number (10001, 10002, etc.)
+  const jobNumber = await generateJobNumber();
+  
   console.log('[JOB SERVICE] Creating job from booking', {
     jobId,
+    jobNumber,
     bookingId: booking.bookingId,
     customerName: booking.customerName,
   });
@@ -322,6 +337,7 @@ export async function createJobFromBooking(booking: ParsedBooking): Promise<Job>
   
   const job: Job = {
     jobId,
+    jobNumber, // Unique job number (10001, 10002, etc.)
     customerId: booking.customerId || '',
     customerName: displayName,
     customerEmail: customerCached?.email || booking.customerEmail,

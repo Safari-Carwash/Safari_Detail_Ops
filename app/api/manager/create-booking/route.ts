@@ -15,6 +15,7 @@ import { findOrCreateCustomer } from '@/lib/square/customers-api';
 import { createBooking } from '@/lib/square/bookings-api';
 import { listPhoneBookingServices, validateAddonVariation, listAddons } from '@/lib/square/catalog-api';
 import * as dynamodb from '@/lib/aws/dynamodb';
+import { generateJobNumber } from '@/lib/services/job-service';
 import { getConfig } from '@/lib/config';
 import * as notificationService from '@/lib/services/notification-service';
 
@@ -291,8 +292,12 @@ export const POST = requireAuth(async (
     // Create new job
     const now = new Date().toISOString();
     
+    // Generate unique job number (10001, 10002, etc.)
+    const jobNumber = await generateJobNumber();
+    
     console.log('[MANAGER BOOKING] Creating new job in DynamoDB', {
       jobId,
+      jobNumber,
       customerId: customer.id,
       customerName: body.customer.name,
       customerPhone: body.customer.phone,
@@ -302,6 +307,7 @@ export const POST = requireAuth(async (
     
     const job = await dynamodb.createJob({
       jobId: jobId,
+      jobNumber,
       customerId: customer.id,
       customerName: body.customer.name,
       customerEmail: body.customer.email,
