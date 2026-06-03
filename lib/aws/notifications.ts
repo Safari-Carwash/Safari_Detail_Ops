@@ -87,22 +87,55 @@ export async function getNotifications(
     expressionAttributeValues[':since'] = since;
   }
   
-  const result = await client.send(new ScanCommand({
-    TableName: config.aws.dynamodb.notificationsTable,
-    FilterExpression: filterExpression,
-    ExpressionAttributeValues: expressionAttributeValues,
-    Limit: limit * 2, // Scan more to account for filtering
-  }));
+  // Scan with pagination to ensure we get all results
+  let allNotifications: Notification[] = [];
+  let lastEvaluatedKey: Record<string, any> | undefined;
+  let scanCount = 0;
+  const maxScans = 10; // Prevent infinite loops
   
-  const notifications = (result.Items || []) as Notification[];
+  try {
+    do {
+      const scanParams: any = {
+        TableName: config.aws.dynamodb.notificationsTable,
+        FilterExpression: filterExpression,
+        ExpressionAttributeValues: expressionAttributeValues,
+        Limit: 100, // Scan up to 100 items per request
+      };
+      
+      if (lastEvaluatedKey) {
+        scanParams.ExclusiveStartKey = lastEvaluatedKey;
+      }
+      
+      const result = await client.send(new ScanCommand(scanParams));
+      
+      // Add items from this scan
+      if (result.Items) {
+        allNotifications.push(...(result.Items as Notification[]));
+      }
+      
+      // Check if we have enough results
+      if (allNotifications.length >= limit) {
+        break;
+      }
+      
+      lastEvaluatedKey = result.LastEvaluatedKey;
+      scanCount++;
+    } while (lastEvaluatedKey && scanCount < maxScans);
+  } catch (err) {
+    console.error('[NOTIFICATIONS QUERY] Scan error', {
+      locationId,
+      error: (err as Error).message,
+    });
+    // Return partial results on error
+  }
   
   // Sort by createdAt descending
-  notifications.sort((a, b) => 
+  allNotifications.sort((a, b) => 
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
   
   // Return up to limit
-  return notifications.slice(0, limit);
+  return allNotifications.slice(0, limit);
 }
 
 /**
@@ -112,16 +145,41 @@ export async function getUnreadCount(locationId: string): Promise<number> {
   const client = getDynamoClient();
   const config = getConfig();
   
-  const result = await client.send(new ScanCommand({
-    TableName: config.aws.dynamodb.notificationsTable,
-    FilterExpression: 'locationId = :locationId AND attribute_not_exists(readAt)',
-    ExpressionAttributeValues: {
-      ':locationId': locationId,
-    },
-    Select: 'COUNT',
-  }));
+  let totalCount = 0;
+  let lastEvaluatedKey: Record<string, any> | undefined;
+  let scanCount = 0;
+  const maxScans = 50; // Prevent infinite loops
   
-  return result.Count || 0;
+  try {
+    do {
+      const scanParams: any = {
+        TableName: config.aws.dynamodb.notificationsTable,
+        FilterExpression: 'locationId = :locationId AND attribute_not_exists(readAt)',
+        ExpressionAttributeValues: {
+          ':locationId': locationId,
+        },
+        Select: 'COUNT',
+      };
+      
+      if (lastEvaluatedKey) {
+        scanParams.ExclusiveStartKey = lastEvaluatedKey;
+      }
+      
+      const result = await client.send(new ScanCommand(scanParams));
+      
+      totalCount += result.Count || 0;
+      lastEvaluatedKey = result.LastEvaluatedKey;
+      scanCount++;
+    } while (lastEvaluatedKey && scanCount < maxScans);
+  } catch (err) {
+    console.error('[UNREAD COUNT QUERY] Scan error', {
+      locationId,
+      error: (err as Error).message,
+    });
+    // Return partial count on error
+  }
+  
+  return totalCount;
 }
 
 /**
