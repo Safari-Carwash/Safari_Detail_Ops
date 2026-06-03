@@ -356,15 +356,27 @@ export const POST = requireAuth(async (
 
     // Generate notification for phone booking
     try {
-      await notificationService.notifyJobCreated(job, 'phone', undefined, session.email);
-      console.log('[PHONE BOOKING] Notification sent', {
-        jobId: job.jobId,
-        bookingId: squareBooking.id,
-        actorEmail: session.email,
-      });
+      const phoneBookingNotif = await notificationService.notifyJobCreated(job, 'phone', undefined, session.email);
+      
+      if (phoneBookingNotif) {
+        console.log('[PHONE BOOKING] Notification created', {
+          jobId: job.jobId,
+          notificationId: phoneBookingNotif.notificationId,
+          bookingId: squareBooking.id,
+          actorEmail: session.email,
+        });
+      } else {
+        console.log('[PHONE BOOKING] Notification skipped (possible duplicate)', {
+          jobId: job.jobId,
+          bookingId: squareBooking.id,
+          actorEmail: session.email,
+        });
+      }
     } catch (notificationError: any) {
       // Don't fail the request if notification fails
-      console.error('[PHONE BOOKING] Notification error', {
+      console.error('[PHONE BOOKING] Notification creation failed', {
+        jobId: job.jobId,
+        bookingId: squareBooking.id,
         error: notificationError.message,
         stack: notificationError.stack,
       });

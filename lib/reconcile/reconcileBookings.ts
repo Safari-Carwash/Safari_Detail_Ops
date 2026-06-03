@@ -18,6 +18,7 @@ import type { Job } from '../types';
 import { WorkStatus } from '../types';
 import { fetchCustomerWithRetry, toCustomerCached } from '../square/customers-api';
 import { fetchServiceName } from '../square/catalog-api';
+import * as notificationService from '../services/notification-service';
 
 /**
  * Fields that are considered "Square-derived" and can be updated during reconciliation
@@ -340,6 +341,46 @@ async function createJobFromBooking(
       jobId: newJob.jobId,
       bookingId,
     });
+
+    // Generate "New Booking" notification for reconciliation-created jobs
+    // Skip notification if job is already cancelled (don't notify about cancelled bookings as "new")
+    if (newJob.status !== WorkStatus.CANCELLED) {
+      try {
+        const notification = await notificationService.notifyJobCreated(
+          newJob,
+          'square',
+          undefined, // No Square event_id for reconciliation jobs
+          undefined  // No actor email for reconciliation
+        );
+        
+        if (notification) {
+          console.log('[RECONCILE] Notification created for reconciliation job', {
+            jobId: newJob.jobId,
+            bookingId,
+            notificationId: notification.notificationId,
+          });
+        } else {
+          console.log('[RECONCILE] Notification skipped (possible duplicate)', {
+            jobId: newJob.jobId,
+            bookingId,
+          });
+        }
+      } catch (notificationError: any) {
+        // Don't fail reconciliation if notification creation fails
+        console.error('[RECONCILE] Failed to create notification for job', {
+          jobId: newJob.jobId,
+          bookingId,
+          error: notificationError.message,
+          stack: notificationError.stack,
+        });
+      }
+    } else {
+      console.log('[RECONCILE] Skipped notification for cancelled job', {
+        jobId: newJob.jobId,
+        bookingId,
+        reason: 'Job is already cancelled',
+      });
+    }
   } catch (error: any) {
     console.error('[RECONCILE] Failed to create job', {
       bookingId,

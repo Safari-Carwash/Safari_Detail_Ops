@@ -544,15 +544,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         try {
           if (jobAction === 'created') {
             // New booking notification
-            await notificationService.notifyJobCreated(
+            const newBookingNotif = await notificationService.notifyJobCreated(
               job,
               'square',
               webhookEvent.event_id
             );
-            console.log('[NOTIFICATION] Job created notification sent', {
-              jobId: job.jobId,
-              eventId: webhookEvent.event_id,
-            });
+            
+            if (newBookingNotif) {
+              console.log('[NOTIFICATION] Job created notification sent', {
+                jobId: job.jobId,
+                notificationId: newBookingNotif.notificationId,
+                eventId: webhookEvent.event_id,
+              });
+            } else {
+              console.log('[NOTIFICATION] Job created notification skipped (possible duplicate)', {
+                jobId: job.jobId,
+                eventId: webhookEvent.event_id,
+              });
+            }
           } else if (jobAction === 'updated' && existingJobSnapshot) {
             // Check for cancellation
             if (job.status === 'CANCELLED' && existingJobSnapshot.status !== 'CANCELLED') {
