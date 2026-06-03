@@ -214,9 +214,17 @@ export default function CalendarPage() {
                         <Link
                           key={job.jobId}
                           href={`/${locale}/jobs/${job.jobId}`}
-                          className="block text-[10px] sm:text-xs bg-primary-100 text-primary-800 rounded px-1 sm:px-2 py-0.5 sm:py-1 hover:bg-primary-200 transition truncate"
+                          className="block bg-primary-100 text-primary-800 rounded px-1 sm:px-2 py-0.5 sm:py-1 hover:bg-primary-200 transition"
                         >
-                          {job.jobNumber && `Job #${String(job.jobNumber).padStart(5, '0')} - `}{job.customerName}
+                          {/* Mobile: Show customer name (more useful) and job # on separate line */}
+                          <div className="text-[10px] sm:text-xs font-semibold truncate">
+                            {job.customerName}
+                          </div>
+                          {job.jobNumber && (
+                            <div className="text-[9px] sm:text-xs opacity-75 truncate">
+                              Job #{String(job.jobNumber).padStart(5, '0')}
+                            </div>
+                          )}
                         </Link>
                       ))}
                       {dayJobs.length > 3 && (
