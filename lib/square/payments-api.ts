@@ -293,8 +293,12 @@ export async function findDepositPaymentForBooking(booking: {
   }
 
   const start = booking.appointmentTime ? new Date(booking.appointmentTime) : null;
-  const beginTime = start ? new Date(start.getTime() - 48 * 60 * 60 * 1000).toISOString() : undefined;
-  const endTime = start ? new Date(start.getTime() + 48 * 60 * 60 * 1000).toISOString() : undefined;
+  
+  // Search window: 60 days BEFORE appointment to 2 days AFTER appointment
+  // This ensures we catch deposits paid anytime from booking creation through appointment date
+  // (Most deposits are paid when booking is created, days/weeks before the appointment)
+  const beginTime = start ? new Date(start.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString() : undefined;
+  const endTime = start ? new Date(start.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString() : undefined;
 
   console.log('[SQUARE PAYMENTS] Searching for deposit payment', {
     bookingId: booking.bookingId,
@@ -302,6 +306,7 @@ export async function findDepositPaymentForBooking(booking: {
     customerId: booking.customerId,
     appointmentTime: booking.appointmentTime,
     searchWindow: { beginTime, endTime },
+    note: 'Window is 60 days before appointment to 2 days after (catches payments from booking creation)',
   });
 
   const payments = await listPayments({
