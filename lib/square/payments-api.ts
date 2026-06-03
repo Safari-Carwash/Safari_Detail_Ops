@@ -54,6 +54,13 @@ export async function listPayments(options: ListPaymentsOptions = {}): Promise<S
     throw new Error('Square access token not configured');
   }
 
+  console.log('[SQUARE PAYMENTS API] Starting payment list', {
+    customerId: options.customerId,
+    beginTime: options.beginTime,
+    endTime: options.endTime,
+    locationId: options.locationId,
+  });
+
   const payments: SquarePayment[] = [];
   let cursor: string | undefined;
   let page = 0;
@@ -61,9 +68,9 @@ export async function listPayments(options: ListPaymentsOptions = {}): Promise<S
 
   do {
     const url = buildPaymentsUrl(options, cursor);
-    console.log('[SQUARE PAYMENTS API] Listing payments', {
-      url: url.replace(config.square.accessToken, 'REDACTED'),
+    console.log('[SQUARE PAYMENTS API] Fetching payments page', {
       page,
+      url: url.replace(config.square.accessToken, 'REDACTED'),
     });
 
     const response = await fetch(url, {
@@ -85,6 +92,21 @@ export async function listPayments(options: ListPaymentsOptions = {}): Promise<S
     }
 
     const data = await response.json();
+    console.log('[SQUARE PAYMENTS API] Page response', {
+      page,
+      paymentCount: data.payments?.length || 0,
+      hasCursor: !!data.cursor,
+      payments: data.payments?.map((p: SquarePayment) => ({
+        id: p.id,
+        amount: p.amount_money?.amount,
+        status: p.status,
+        note: p.note,
+        order_id: p.order_id,
+        customer_id: p.customer_id,
+        created_at: p.created_at,
+      })) || [],
+    });
+
     if (data.payments?.length) {
       payments.push(...data.payments);
     }
@@ -93,6 +115,14 @@ export async function listPayments(options: ListPaymentsOptions = {}): Promise<S
     page += 1;
   } while (cursor && page < maxPages);
 
+  console.log('[SQUARE PAYMENTS API] Total payments found', {
+    totalCount: payments.length,
+    summaryByStatus: payments.reduce((acc, p) => {
+      acc[p.status || 'UNKNOWN'] = (acc[p.status || 'UNKNOWN'] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+  });
+
   return payments;
 }
 
@@ -100,12 +130,21 @@ export function isDepositPayment(payment: SquarePayment): boolean {
   // Only accept COMPLETED payments (not PENDING, AUTHORIZED, CANCELED, etc.)
   // COMPLETED payments are confirmed captured transactions
   if (payment.status !== 'COMPLETED') {
+    console.log('[SQUARE PAYMENTS] Payment rejected - wrong status', {
+      paymentId: payment.id,
+      status: payment.status,
+      expected: 'COMPLETED',
+    });
     return false;
   }
 
   // If payment has explicit deposit-related note, accept it
   const note = payment.note || '';
   if (/detailing appointment deposit|appointment deposit|deposit charged/i.test(note)) {
+    console.log('[SQUARE PAYMENTS] Payment accepted - deposit note found', {
+      paymentId: payment.id,
+      note,
+    });
     return true;
   }
 
@@ -116,57 +155,127 @@ export function isDepositPayment(payment: SquarePayment): boolean {
   // - linked to a booking order (order_id set), OR
   // - has a reasonable deposit-like amount (e.g., $10-$100 for car detailing)
   // The payment lookup already filters by customer/time window, so this is safe
-  return true; // Accept any COMPLETED payment in the time window
+  console.log('[SQUARE PAYMENTS] Payment accepted - in time window with COMPLETED status', {
+    paymentId: payment.id,
+    amount: payment.amount_money?.amount,
+    orderId: payment.order_id,
+    status: payment.status,
+  });
+  return true;
 }
 
 export function findDepositPayment(payments: SquarePayment[], bookingOrderId?: string): SquarePayment | null {
+  console.log('[SQUARE PAYMENTS] Finding deposit among', {
+    totalPayments: payments.length,
+    bookingOrderId,
+    paymentsByStatus: payments.reduce((acc, p) => {
+      acc[p.status || 'UNKNOWN'] = (acc[p.status || 'UNKNOWN'] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+  });
+
   // Filter for COMPLETED payments only (actual captured transactions)
   const completedPayments = payments.filter(p => p.status === 'COMPLETED');
   
+  console.log('[SQUARE PAYMENTS] Filtered to COMPLETED payments', {
+    completedCount: completedPayments.length,
+  });
+
   if (completedPayments.length === 0) {
+    console.log('[SQUARE PAYMENTS] No COMPLETED payments found');
     return null;
   }
 
   // First priority: payment linked to booking order
   if (bookingOrderId) {
-    const paymentByOrder = completedPayments.find(payment => payment.order_id === bookingOrderId);
+    console.log('[SQUARE PAYMENTS] Searching by order_id', { bookingOrderId });
+    const paymentByOrder = completedPayments.find(payment => {
+      const matches = payment.order_id === bookingOrderId;
+      console.log('[SQUARE PAYMENTS] Order match check', {
+        paymentId: payment.id,
+        paymentOrderId: payment.order_id,
+        searchOrderId: bookingOrderId,
+        matches,
+      });
+      return matches;
+    });
     if (paymentByOrder) {
+      console.log('[SQUARE PAYMENTS] Found by order_id', {
+        paymentId: paymentByOrder.id,
+        amount: paymentByOrder.amount_money?.amount,
+      });
       return paymentByOrder;
     }
   }
 
   // Second priority: payment with explicit deposit note
+  console.log('[SQUARE PAYMENTS] Searching by deposit note');
   const noteMatches = completedPayments.filter(payment => {
     const note = payment.note || '';
-    return /detailing appointment deposit|appointment deposit|deposit|down payment/i.test(note);
+    const matches = /detailing appointment deposit|appointment deposit|deposit/i.test(note);
+    console.log('[SQUARE PAYMENTS] Note match check', {
+      paymentId: payment.id,
+      note,
+      matches,
+    });
+    return matches;
   });
 
   if (noteMatches.length === 1) {
+    console.log('[SQUARE PAYMENTS] Found single payment with deposit note', {
+      paymentId: noteMatches[0].id,
+      amount: noteMatches[0].amount_money?.amount,
+    });
     return noteMatches[0];
   }
 
   if (noteMatches.length > 1) {
     // Return smallest payment with deposit note (more likely to be deposit vs full service)
-    return noteMatches.reduce((min, p) => {
+    const best = noteMatches.reduce((min, p) => {
       const minAmount = min.amount_money?.amount || 0;
       const pAmount = p.amount_money?.amount || 0;
       return pAmount < minAmount ? p : min;
     });
+    console.log('[SQUARE PAYMENTS] Found multiple deposit notes, returning smallest', {
+      selectedPaymentId: best.id,
+      amount: best.amount_money?.amount,
+      otherCount: noteMatches.length - 1,
+    });
+    return best;
   }
 
   // Last resort: if only one COMPLETED payment in time window, likely it's the deposit
   // (Assuming most bookings have deposit as first payment, service payment as second)
   if (completedPayments.length === 1) {
+    console.log('[SQUARE PAYMENTS] Only one COMPLETED payment, assuming it\'s the deposit', {
+      paymentId: completedPayments[0].id,
+      amount: completedPayments[0].amount_money?.amount,
+    });
     return completedPayments[0];
   }
 
   // Multiple payments but no clear deposit marker
   // Return the smallest one (deposits are typically smaller than full service)
-  return completedPayments.reduce((min, p) => {
+  console.log('[SQUARE PAYMENTS] Multiple payments, selecting smallest', {
+    totalCount: completedPayments.length,
+  });
+  const smallest = completedPayments.reduce((min, p) => {
     const minAmount = min.amount_money?.amount || 0;
     const pAmount = p.amount_money?.amount || 0;
+    console.log('[SQUARE PAYMENTS] Amount comparison', {
+      candidatePaymentId: p.id,
+      candidateAmount: pAmount,
+      currentMinId: min.id,
+      currentMinAmount: minAmount,
+      candidateIsSmaller: pAmount < minAmount,
+    });
     return pAmount < minAmount ? p : min;
   });
+  console.log('[SQUARE PAYMENTS] Selected smallest payment', {
+    paymentId: smallest.id,
+    amount: smallest.amount_money?.amount,
+  });
+  return smallest;
 }
 
 export async function findDepositPaymentForBooking(booking: {

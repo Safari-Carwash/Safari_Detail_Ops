@@ -55,7 +55,19 @@ async function enrichBookingDepositFromSquareData(booking: ParsedBooking) {
   let depositReceiptNumber: string | undefined;
   let depositPaymentNote: string | undefined;
 
+  console.log('[JOB SERVICE] Starting deposit enrichment', {
+    bookingId: booking.bookingId,
+    customerId: booking.customerId,
+    appointmentTime: booking.appointmentTime,
+    orderId: booking.orderId,
+    locationId: booking.locationId,
+  });
+
+  // First: Try to get deposit from order
   if (booking.orderId) {
+    console.log('[JOB SERVICE] Attempting to enrich from order', {
+      orderId: booking.orderId,
+    });
     try {
       const order = await retrieveOrder(booking.orderId);
       if (order) {
@@ -63,6 +75,13 @@ async function enrichBookingDepositFromSquareData(booking: ParsedBooking) {
         depositAmountCents = extractNonAddonAmount(order) || order.total_money?.amount;
         depositCurrency = order.total_money?.currency;
         depositPaymentStatus = order.state;
+        console.log('[JOB SERVICE] Order enrichment successful', {
+          orderId: order.id,
+          depositAmountCents,
+          depositPaymentStatus,
+        });
+      } else {
+        console.warn('[JOB SERVICE] Order not found', { orderId: booking.orderId });
       }
     } catch (error: any) {
       console.warn('[JOB SERVICE] Failed to enrich deposit from order', {
@@ -70,18 +89,42 @@ async function enrichBookingDepositFromSquareData(booking: ParsedBooking) {
         error: error?.message || error,
       });
     }
+  } else {
+    console.log('[JOB SERVICE] No orderId, skipping order lookup');
   }
 
+  // Second: Try to get deposit from payment if order didn't have amount
   if (depositAmountCents == null) {
+    console.log('[JOB SERVICE] Attempting to find deposit payment', {
+      bookingId: booking.bookingId,
+      hasCustomerId: !!booking.customerId,
+      hasAppointmentTime: !!booking.appointmentTime,
+    });
     try {
-      const payment = await findDepositPaymentForBooking(booking);
+      const payment = await findDepositPaymentForBooking({
+        bookingId: booking.bookingId,
+        customerId: booking.customerId,
+        appointmentTime: booking.appointmentTime,
+        locationId: booking.locationId,
+        orderId: booking.orderId,
+      });
       if (payment) {
+        console.log('[JOB SERVICE] Deposit payment found', {
+          paymentId: payment.id,
+          amount: payment.amount_money?.amount,
+          status: payment.status,
+          note: payment.note,
+        });
         depositAmountCents = payment.amount_money?.amount;
         depositCurrency = payment.amount_money?.currency;
         depositPaymentStatus = payment.status;
         depositPaymentId = payment.id;
         depositReceiptNumber = payment.receipt_number;
         depositPaymentNote = payment.note;
+      } else {
+        console.log('[JOB SERVICE] No deposit payment found', {
+          bookingId: booking.bookingId,
+        });
       }
     } catch (error: any) {
       console.warn('[JOB SERVICE] Failed to enrich deposit from payment', {
@@ -89,6 +132,10 @@ async function enrichBookingDepositFromSquareData(booking: ParsedBooking) {
         error: error?.message || error,
       });
     }
+  } else {
+    console.log('[JOB SERVICE] Skipping payment lookup - amount found in order', {
+      depositAmountCents,
+    });
   }
 
   // IMPORTANT: Do NOT parse deposit amount from notes text like "CARD ON FILE" or "$20 protection"
