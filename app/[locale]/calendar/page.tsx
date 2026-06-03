@@ -222,7 +222,7 @@ export default function CalendarPage() {
                           </div>
                           {job.jobNumber && (
                             <div className="text-[9px] sm:text-xs opacity-75 truncate">
-                              Job #{String(job.jobNumber).padStart(5, '0')}
+                              #{String(job.jobNumber).padStart(5, '0')}
                             </div>
                           )}
                         </Link>
