@@ -14,6 +14,7 @@ import type { Notification } from '@/lib/types';
 
 interface JobCard {
   jobId: string;
+  jobNumber?: number;
   customerName: string;
   vehicleInfo: string;
   serviceType: string;
@@ -54,6 +55,7 @@ function parseAddonsFromNotes(notes: string | undefined): string[] {
 const mockJobs: JobCard[] = [
   {
     jobId: '1',
+    jobNumber: 10001,
     customerName: 'John Doe',
     vehicleInfo: '2020 Tesla Model 3 - ABC123',
     serviceType: 'Full Detail',
@@ -64,6 +66,7 @@ const mockJobs: JobCard[] = [
   },
   {
     jobId: '2',
+    jobNumber: 10002,
     customerName: 'Jane Smith',
     vehicleInfo: '2019 Honda Accord - XYZ789',
     serviceType: 'Express Wash',
@@ -253,6 +256,7 @@ export default function TodayBoard() {
         if (data.success && data.data?.jobs) {
           const formattedJobs: JobCard[] = data.data.jobs.map((job: any) => ({
             jobId: job.jobId,
+            jobNumber: job.jobNumber,
             customerName: job.customerName || 'Unknown',
             vehicleInfo: job.vehicleInfo?.year && job.vehicleInfo?.make 
               ? `${job.vehicleInfo.year} ${job.vehicleInfo.make} ${job.vehicleInfo.model || ''} - ${job.vehicleInfo.licensePlate || ''}`.trim()
@@ -499,6 +503,11 @@ export default function TodayBoard() {
                                     )}
                                   </div>
                                 </div>
+                                {job.jobNumber && (
+                                  <div className="text-xs font-semibold mb-1" style={{ color: 'var(--sf-orange)' }}>
+                                    Job #{String(job.jobNumber).padStart(5, '0')}
+                                  </div>
+                                )}
                                 {job.payment?.amountCents && (
                                   <div className="text-sm font-semibold mb-2" style={{ color: 'var(--sf-orange)' }}>
                                     ${(job.payment.amountCents / 100).toFixed(2)}

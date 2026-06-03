@@ -269,6 +269,7 @@ export default function JobDetail() {
         
         setJob({
           jobId: apiJob.jobId,
+          jobNumber: apiJob.jobNumber,
           bookingId: apiJob.bookingId,
           orderId: apiJob.orderId,
           squareOrderId: apiJob.squareOrderId,
