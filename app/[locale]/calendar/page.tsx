@@ -41,23 +41,11 @@ function getJobSource(job: Job): 'website' | 'manual' {
 }
 
 // Helper: Get styling for calendar card based on source
-function getSourceStyling(source: 'website' | 'manual'): {
-  bgClass: string;
-  labelText: string;
-  labelColor: string;
-} {
+function getSourceStyling(source: 'website' | 'manual'): string {
   if (source === 'website') {
-    return {
-      bgClass: 'bg-blue-50 border-blue-300 hover:bg-blue-100',
-      labelText: 'Website',
-      labelColor: 'text-blue-600',
-    };
+    return 'bg-blue-50 border-blue-300 hover:bg-blue-100';
   } else {
-    return {
-      bgClass: 'bg-orange-50 border-orange-300 hover:bg-orange-100',
-      labelText: 'Manual',
-      labelColor: 'text-orange-600',
-    };
+    return 'bg-orange-50 border-orange-300 hover:bg-orange-100';
   }
 }
 
@@ -268,19 +256,15 @@ export default function CalendarPage() {
                           <Link
                             key={job.jobId}
                             href={`/${locale}/jobs/${job.jobId}`}
-                            className={`block rounded px-1 sm:px-2 py-0.5 sm:py-1 border transition ${styling.bgClass}`}
+                            className={`block rounded px-1 sm:px-2 py-0.5 sm:py-1 border transition ${styling}`}
                           >
-                            {/* Source Label */}
-                            <div className={`text-[8px] sm:text-xs font-semibold ${styling.labelColor}`}>
-                              {styling.labelText}
-                            </div>
                             {/* Customer Name */}
-                            <div className="text-[10px] sm:text-xs font-semibold truncate">
+                            <div className="text-[10px] sm:text-xs font-semibold truncate" style={{ color: 'var(--sf-ink)' }}>
                               {job.customerName}
                             </div>
                             {/* Job Number */}
                             {job.jobNumber && (
-                              <div className={`text-[9px] sm:text-xs opacity-75 truncate ${styling.labelColor}`}>
+                              <div className="text-[9px] sm:text-xs opacity-75 truncate" style={{ color: 'var(--sf-ink)' }}>
                                 #{String(job.jobNumber).padStart(5, '0')}
                               </div>
                             )}
