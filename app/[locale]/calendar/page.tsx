@@ -21,6 +21,44 @@ interface Job {
   serviceType: string;
   appointmentTime: string;
   status: string;
+  source?: 'website' | 'manual'; // Booking source
+  bookingId?: string; // Square booking ID (for fallback inference)
+  squareOrderId?: string; // Square order ID (for fallback inference)
+}
+
+// Helper: Determine booking source with fallback logic
+function getJobSource(job: Job): 'website' | 'manual' {
+  // Priority 1: Explicit source field
+  if (job.source === 'website') return 'website';
+  if (job.source === 'manual') return 'manual';
+  
+  // Priority 2: Fallback inference from Square integration
+  // If job has Square bookingId/orderId, treat as website booking
+  if (job.bookingId || job.squareOrderId) return 'website';
+  
+  // Priority 3: Default to manual if no Square reference
+  return 'manual';
+}
+
+// Helper: Get styling for calendar card based on source
+function getSourceStyling(source: 'website' | 'manual'): {
+  bgClass: string;
+  labelText: string;
+  labelColor: string;
+} {
+  if (source === 'website') {
+    return {
+      bgClass: 'bg-blue-50 border-blue-300 hover:bg-blue-100',
+      labelText: 'Website',
+      labelColor: 'text-blue-600',
+    };
+  } else {
+    return {
+      bgClass: 'bg-orange-50 border-orange-300 hover:bg-orange-100',
+      labelText: 'Manual',
+      labelColor: 'text-orange-600',
+    };
+  }
 }
 
 export default function CalendarPage() {
@@ -177,6 +215,18 @@ export default function CalendarPage() {
           </div>
         ) : (
           <div className="bg-white rounded-xl sm:rounded-2xl p-3 sm:p-6" style={{ boxShadow: 'var(--sf-shadow)', border: '1px solid var(--sf-border)' }}>
+            {/* Legend */}
+            <div className="mb-4 flex gap-4 text-xs sm:text-sm justify-center sm:justify-start">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-blue-200 border border-blue-400 rounded"></div>
+                <span style={{ color: 'var(--sf-ink)' }}>Website Booking</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-orange-200 border border-orange-400 rounded"></div>
+                <span style={{ color: 'var(--sf-ink)' }}>Manual Booking</span>
+              </div>
+            </div>
+
             {/* Calendar Grid */}
             <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {/* Day headers */}
@@ -210,23 +260,33 @@ export default function CalendarPage() {
                       {day}
                     </div>
                     <div className="space-y-0.5 sm:space-y-1">
-                      {dayJobs.slice(0, 3).map((job) => (
-                        <Link
-                          key={job.jobId}
-                          href={`/${locale}/jobs/${job.jobId}`}
-                          className="block bg-primary-100 text-primary-800 rounded px-1 sm:px-2 py-0.5 sm:py-1 hover:bg-primary-200 transition"
-                        >
-                          {/* Mobile: Show customer name (more useful) and job # on separate line */}
-                          <div className="text-[10px] sm:text-xs font-semibold truncate">
-                            {job.customerName}
-                          </div>
-                          {job.jobNumber && (
-                            <div className="text-[9px] sm:text-xs opacity-75 truncate">
-                              #{String(job.jobNumber).padStart(5, '0')}
+                      {dayJobs.slice(0, 3).map((job) => {
+                        const source = getJobSource(job);
+                        const styling = getSourceStyling(source);
+                        
+                        return (
+                          <Link
+                            key={job.jobId}
+                            href={`/${locale}/jobs/${job.jobId}`}
+                            className={`block rounded px-1 sm:px-2 py-0.5 sm:py-1 border transition ${styling.bgClass}`}
+                          >
+                            {/* Source Label */}
+                            <div className={`text-[8px] sm:text-xs font-semibold ${styling.labelColor}`}>
+                              {styling.labelText}
                             </div>
-                          )}
-                        </Link>
-                      ))}
+                            {/* Customer Name */}
+                            <div className="text-[10px] sm:text-xs font-semibold truncate">
+                              {job.customerName}
+                            </div>
+                            {/* Job Number */}
+                            {job.jobNumber && (
+                              <div className={`text-[9px] sm:text-xs opacity-75 truncate ${styling.labelColor}`}>
+                                #{String(job.jobNumber).padStart(5, '0')}
+                              </div>
+                            )}
+                          </Link>
+                        );
+                      })}
                       {dayJobs.length > 3 && (
                         <div className="text-[10px] sm:text-xs text-gray-500 px-1 sm:px-2">
                           +{dayJobs.length - 3} more
