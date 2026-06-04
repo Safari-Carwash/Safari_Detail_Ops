@@ -1159,12 +1159,36 @@ export default function JobDetail() {
               <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Source</label>
               <div className="font-medium flex items-center gap-2" style={{ color: 'var(--sf-ink)' }}>
                 {(() => {
-                  // Determine source: explicit field, or infer from bookingId
-                  const explicitSource = job?.source;
-                  const inferredSource = (job?.bookingId || job?.squareOrderId) ? 'website' : 'manual';
-                  const displaySource = explicitSource || inferredSource;
+                  // DEBUG: Log current state
+                  const explicit = job?.source;
+                  const hasBkng = !!job?.bookingId;
+                  const hasSqOrd = !!job?.squareOrderId;
+                  if (!explicit) {
+                    console.log('[SOURCE DEBUG]', { source: explicit, bookingId: hasBkng, squareOrderId: hasSqOrd });
+                  }
                   
-                  if (displaySource === 'website') {
+                  // PRIORITIZE explicit source field - it's authoritative
+                  if (job?.source === 'manual') {
+                    return (
+                      <>
+                        <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                        Manual
+                      </>
+                    );
+                  }
+                  
+                  if (job?.source === 'website') {
+                    return (
+                      <>
+                        <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                        Website
+                      </>
+                    );
+                  }
+                  
+                  // FALLBACK: Only infer if source is missing
+                  const inferredSource = (job?.bookingId || job?.squareOrderId) ? 'website' : 'manual';
+                  if (inferredSource === 'website') {
                     return (
                       <>
                         <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
@@ -1188,25 +1212,34 @@ export default function JobDetail() {
               <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Created By</label>
               <div className="font-medium" style={{ color: 'var(--sf-ink)' }}>
                 {(() => {
-                  const explicitSource = job?.source;
-                  const inferredSource = (job?.bookingId || job?.squareOrderId) ? 'website' : 'manual';
-                  const displaySource = explicitSource || inferredSource;
+                  // Check explicit source field first (not inference)
+                  const source = job?.source;
                   
-                  if (displaySource === 'website') {
+                  // Website bookings always show "Website Booking"
+                  if (source === 'website') {
                     return 'Website Booking';
                   }
                   
-                  // For manual bookings, clean up the createdBy value
-                  if (job?.createdBy) {
-                    // If it's a raw internal ID format (contains 'manager-phone:' or UUID pattern), clean it
+                  // Manual bookings: show staff name
+                  if (source === 'manual' && job?.createdBy) {
+                    // Clean up raw ID formats
                     if (job.createdBy.includes('manager-phone:') || /^[0-9a-f-]{36}$/.test(job.createdBy)) {
                       return 'Staff / Manager';
                     }
-                    // Otherwise assume it's already a clean staff name
                     return job.createdBy;
                   }
                   
-                  return 'Staff / Manager';
+                  // Fallback for missing source field
+                  if (source === 'website' || (job?.bookingId && !job?.createdBy?.includes('manager-phone'))) {
+                    return 'Website Booking';
+                  }
+                  
+                  // Default for manual
+                  return job?.createdBy ? (
+                    job.createdBy.includes('manager-phone:') || /^[0-9a-f-]{36}$/.test(job.createdBy)
+                      ? 'Staff / Manager'
+                      : job.createdBy
+                  ) : 'Staff / Manager';
                 })()}
               </div>
             </div>
