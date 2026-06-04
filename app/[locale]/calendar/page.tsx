@@ -203,18 +203,6 @@ export default function CalendarPage() {
           </div>
         ) : (
           <div className="bg-white rounded-xl sm:rounded-2xl p-3 sm:p-6" style={{ boxShadow: 'var(--sf-shadow)', border: '1px solid var(--sf-border)' }}>
-            {/* Legend */}
-            <div className="mb-4 flex gap-4 text-xs sm:text-sm justify-center sm:justify-start">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-200 border border-blue-400 rounded"></div>
-                <span style={{ color: 'var(--sf-ink)' }}>Website Booking</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-orange-200 border border-orange-400 rounded"></div>
-                <span style={{ color: 'var(--sf-ink)' }}>Manual Booking</span>
-              </div>
-            </div>
-
             {/* Calendar Grid */}
             <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {/* Day headers */}
