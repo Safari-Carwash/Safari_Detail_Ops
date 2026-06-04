@@ -1212,34 +1212,35 @@ export default function JobDetail() {
               <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Created By</label>
               <div className="font-medium" style={{ color: 'var(--sf-ink)' }}>
                 {(() => {
-                  // Check explicit source field first (not inference)
-                  const source = job?.source;
+                  const source = job?.source as 'website' | 'manual' | undefined;
                   
-                  // Website bookings always show "Website Booking"
+                  // Website bookings
                   if (source === 'website') {
                     return 'Website Booking';
                   }
                   
-                  // Manual bookings: show staff name
+                  // Manual bookings with staff name
                   if (source === 'manual' && job?.createdBy) {
-                    // Clean up raw ID formats
                     if (job.createdBy.includes('manager-phone:') || /^[0-9a-f-]{36}$/.test(job.createdBy)) {
                       return 'Staff / Manager';
                     }
                     return job.createdBy;
                   }
                   
-                  // Fallback for missing source field
-                  if (source === 'website' || (job?.bookingId && !job?.createdBy?.includes('manager-phone'))) {
+                  // Fallback: if bookingId exists (likely website), show "Website Booking"
+                  if (job?.bookingId) {
                     return 'Website Booking';
                   }
                   
-                  // Default for manual
-                  return job?.createdBy ? (
-                    job.createdBy.includes('manager-phone:') || /^[0-9a-f-]{36}$/.test(job.createdBy)
-                      ? 'Staff / Manager'
-                      : job.createdBy
-                  ) : 'Staff / Manager';
+                  // Default: manual or unknown
+                  if (job?.createdBy) {
+                    if (job.createdBy.includes('manager-phone:') || /^[0-9a-f-]{36}$/.test(job.createdBy)) {
+                      return 'Staff / Manager';
+                    }
+                    return job.createdBy;
+                  }
+                  
+                  return 'Staff / Manager';
                 })()}
               </div>
             </div>
@@ -1831,33 +1832,67 @@ export default function JobDetail() {
         {/* Payment */}
         <section className="bg-white rounded-2xl p-6" style={{ boxShadow: 'var(--sf-shadow)', border: '1px solid var(--sf-border)' }}>
           <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--sf-ink)' }}>💳 {t('payment.title')}</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
-              <div className="text-sm text-gray-500">Total Job Amount</div>
-              <div className="text-xl font-semibold mt-2">
-                ${((job.payment?.amountCents || 0) / 100).toFixed(2)}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
-              <div className="text-sm text-gray-500">Deposit Collected</div>
-              <div className="text-xl font-semibold mt-2">
-                {job.depositAmountCents != null ? `$${(job.depositAmountCents / 100).toFixed(2)}` : 'Not available'}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
-              <div className="text-sm text-gray-500">Remaining Balance Due</div>
-              <div className="text-xl font-semibold mt-2">
-                ${((job.depositAmountCents != null ? Math.max(0, (job.payment?.amountCents || 0) - job.depositAmountCents) : (job.payment?.amountCents || 0)) / 100).toFixed(2)}
-              </div>
-            </div>
-          </div>
-          {job.depositAmountCents == null && (
-            <div className="text-sm text-[#92400E] bg-[#FEF3C7] p-3 rounded-lg mb-4 border border-[#FDE68A]">
-              {job.notes?.includes('CARD ON FILE') 
-                ? 'Card on file stored — no payment charged yet'
-                : 'No deposit payment found in Square. Verify customer payment status.'}
-            </div>
-          )}
+          
+          {/* Determine if this is a website (deposit) booking or phone (manual) booking */}
+          {(() => {
+            const isManualBooking = job?.source === 'manual' || (!job?.source && !job?.bookingId && !job?.squareOrderId);
+            const hasDeposit = job?.depositAmountCents != null && job.depositAmountCents > 0;
+            
+            if (isManualBooking || !hasDeposit) {
+              // Phone booking - show only Total Job Amount
+              return (
+                <div className="grid grid-cols-1 gap-4 mb-4">
+                  <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
+                    <div className="text-sm text-gray-500">Total Job Amount</div>
+                    <div className="text-xl font-semibold mt-2">
+                      ${((job?.payment?.amountCents || 0) / 100).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              );
+            } else {
+              // Website booking with deposit - show all 3 boxes
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
+                    <div className="text-sm text-gray-500">Total Job Amount</div>
+                    <div className="text-xl font-semibold mt-2">
+                      ${((job?.payment?.amountCents || 0) / 100).toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
+                    <div className="text-sm text-gray-500">Deposit Collected</div>
+                    <div className="text-xl font-semibold mt-2">
+                      {job?.depositAmountCents != null ? `$${(job.depositAmountCents / 100).toFixed(2)}` : 'Not available'}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
+                    <div className="text-sm text-gray-500">Remaining Balance Due</div>
+                    <div className="text-xl font-semibold mt-2">
+                      ${((job?.depositAmountCents != null ? Math.max(0, (job?.payment?.amountCents || 0) - job.depositAmountCents) : (job?.payment?.amountCents || 0)) / 100).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+          })()}
+          
+          {/* Deposit payment details - only for website bookings */}
+          {(() => {
+            const isManualBooking = job?.source === 'manual' || (!job?.source && !job?.bookingId && !job?.squareOrderId);
+            const hasDeposit = job?.depositAmountCents != null && job.depositAmountCents > 0;
+            
+            if (!isManualBooking && job?.depositAmountCents == null) {
+              return (
+                <div className="text-sm text-[#92400E] bg-[#FEF3C7] p-3 rounded-lg mb-4 border border-[#FDE68A]">
+                  {job?.notes?.includes('CARD ON FILE') 
+                    ? 'Card on file stored — no payment charged yet'
+                    : 'No deposit payment found in Square. Verify customer payment status.'}
+                </div>
+              );
+            }
+            return null;
+          })()}
           <div className="flex items-center justify-between mb-4">
             <div className="flex-1">
               <div className="text-sm" style={{ color: 'var(--sf-muted)' }}>{t('payment.amount')}</div>
