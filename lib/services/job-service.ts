@@ -426,6 +426,10 @@ export async function updateJobFromBooking(
     customerCached, // Phase 3: Update cached customer data
     payment: paymentUpdate,
     ...depositMeta,
+    // Preserve existing source field if it was set (don't overwrite phone bookings with 'website')
+    ...(currentJob?.source && {
+      source: currentJob.source,
+    }),
     // Add cancellation metadata if newly cancelled (idempotent)
     ...(isCancelled && !wasAlreadyCancelled && {
       cancelledAt: new Date().toISOString(),

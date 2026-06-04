@@ -31,7 +31,14 @@ import {
   ScanCommand, 
   UpdateCommand 
 } from '@aws-sdk/lib-dynamodb';
-import { getConfig } from '@/lib/config';
+
+// Get environment and construct table name
+const env = process.env.APP_ENV || 'prod';
+if (env !== 'qa' && env !== 'prod') {
+  console.error('ERROR: APP_ENV must be "qa" or "prod"');
+  process.exit(1);
+}
+const jobsTableName = `safari-detail-ops-${env}-jobs`;
 
 const dryRun = process.argv.includes('--dry-run');
 const autoConfirm = process.argv.includes('--confirm');
@@ -91,18 +98,20 @@ async function backfillBookingSource() {
     
     console.log('Step 0: Validating environment and configuration...');
     const appEnv = process.env.APP_ENV?.toLowerCase();
-    console.log(`  APP_ENV: ${appEnv || '[NOT SET - defaulting to qa]'}`);
-    console.log(`  AWS_REGION: ${process.env.AWS_REGION || '[NOT SET - defaulting to us-east-1]'}`);
+    if (appEnv !== 'qa' && appEnv !== 'prod') {
+      console.error('ERROR: APP_ENV must be set to "qa" or "prod"');
+      process.exit(1);
+    }
+    const awsRegion = process.env.AWS_REGION || 'us-east-1';
+    console.log(`  APP_ENV: ${appEnv}`);
+    console.log(`  AWS_REGION: ${awsRegion}`);
     console.log(`  AWS_ACCESS_KEY_ID: ${process.env.AWS_ACCESS_KEY_ID ? '[SET]' : '[NOT SET]'}`);
     console.log(`  AWS_SECRET_ACCESS_KEY: ${process.env.AWS_SECRET_ACCESS_KEY ? '[SET]' : '[NOT SET]'}`);
     console.log();
 
-    const config = getConfig();
-    const jobsTableName = config.aws.dynamodb.jobsTable;
-
     console.log(`Step 1: Configuration loaded`);
-    console.log(`  Environment: ${config.env}`);
-    console.log(`  Region: ${config.aws.region}`);
+    console.log(`  Environment: ${appEnv}`);
+    console.log(`  Region: ${awsRegion}`);
     console.log(`  Jobs Table: ${jobsTableName}`);
     console.log(`  Dry Run: ${dryRun}`);
     console.log(`  Auto-confirm: ${autoConfirm}`);
@@ -112,7 +121,7 @@ async function backfillBookingSource() {
     console.log('Step 2: Creating DynamoDB client...');
     try {
       const client = new DynamoDBClient({
-        region: config.aws.region,
+        region: awsRegion,
       });
       
       var dynamoClient = DynamoDBDocumentClient.from(client, {
@@ -134,7 +143,10 @@ async function backfillBookingSource() {
     try {
       const scanCommand = new ScanCommand({
         TableName: jobsTableName,
-        ProjectionExpression: 'jobId,source,bookingId,squareOrderId,createdBy',
+        ProjectionExpression: 'jobId,#source,bookingId,squareOrderId,createdBy',
+        ExpressionAttributeNames: {
+          '#source': 'source',
+        },
       });
 
       scanResult = await dynamoClient.send(scanCommand);
@@ -166,6 +178,10 @@ async function backfillBookingSource() {
     console.log();
 
     // Step 5: Categorize jobs to update
+    // Better heuristic:
+    // - If createdBy has "manager-phone:" pattern → manual/phone booking (old format)
+    // - If createdBy is NOT a UUID and NOT empty → likely manual booking (staff name)
+    // - Otherwise → default to website (conservative approach, safer default)
     const toUpdate: Array<{
       jobId: string;
       source: 'website' | 'manual';
@@ -173,13 +189,25 @@ async function backfillBookingSource() {
     }> = [];
 
     for (const job of jobsWithoutSource) {
-      const source = (job.bookingId || job.squareOrderId) ? 'website' : 'manual';
+      let source: 'website' | 'manual' = 'website';
+      let reason = 'Default: assumed website booking';
+
+      // Check if createdBy suggests manual/phone booking
+      if (job.createdBy) {
+        if (job.createdBy.includes('manager-phone:')) {
+          source = 'manual';
+          reason = `createdBy contains "manager-phone:" pattern`;
+        } else if (!/^[0-9a-f\-]{36}$/.test(job.createdBy)) {
+          // Not a UUID format (likely staff name)
+          source = 'manual';
+          reason = `createdBy appears to be staff name: "${job.createdBy}"`;
+        }
+      }
+
       toUpdate.push({
         jobId: job.jobId,
         source,
-        reason: source === 'website' 
-          ? `Has ${job.bookingId ? 'bookingId' : 'squareOrderId'}`
-          : 'No Square linkage (manual entry)',
+        reason,
       });
     }
 
@@ -189,12 +217,16 @@ async function backfillBookingSource() {
     const websiteJobs = toUpdate.filter((j) => j.source === 'website');
     const manualJobs = toUpdate.filter((j) => j.source === 'manual');
 
-    console.log(`    - Website bookings: ${websiteJobs.length}`);
-    console.log(`    - Manual bookings: ${manualJobs.length}`);
+    console.log(`    - Website bookings (default or confirmed): ${websiteJobs.length}`);
+    console.log(`    - Manual/phone bookings (detected): ${manualJobs.length}`);
     console.log();
 
     if (dryRun) {
       console.log('DRY RUN MODE - Preview of jobs that would be updated:');
+      console.log('Manual bookings detected:');
+      manualJobs.forEach((j) => {
+        console.log(`  - Job ${j.jobId}: ${j.reason}`);
+      });
       console.log();
       toUpdate.slice(0, 10).forEach((job) => {
         console.log(`  ${job.jobId} → source = ${job.source} (${job.reason})`);
@@ -210,7 +242,7 @@ async function backfillBookingSource() {
     // Step 6: Confirm before updating (unless --confirm flag)
     if (!autoConfirm) {
       console.log('⚠️  PRODUCTION UPDATE CONFIRMATION');
-      console.log(`  Environment: ${config.env.toUpperCase()}`);
+      console.log(`  Environment: ${appEnv.toUpperCase()}`);
       console.log(`  Table: ${jobsTableName}`);
       console.log(`  Jobs to update: ${toUpdate.length}`);
       console.log();
