@@ -22,6 +22,9 @@ interface Job {
   depositAmountCents?: number;
   depositCurrency?: string;
   depositPaymentStatus?: string;
+  source?: 'website' | 'manual'; // Booking source
+  createdAt?: string;
+  createdBy?: string;
   customerName: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -279,6 +282,9 @@ export default function JobDetail() {
           depositAmountCents: apiJob.depositAmountCents,
           depositCurrency: apiJob.depositCurrency,
           depositPaymentStatus: apiJob.depositPaymentStatus,
+          source: apiJob.source,
+          createdAt: apiJob.createdAt,
+          createdBy: apiJob.createdBy,
           customerName: apiJob.customerCached?.name || apiJob.customerName || 'Unknown Customer',
           customerPhone: apiJob.customerCached?.phone || apiJob.customerPhone,
           customerEmail: apiJob.customerCached?.email || apiJob.customerEmail,
@@ -1143,6 +1149,94 @@ export default function JobDetail() {
             <p className="text-white text-2xl font-bold">Job #{String(job.jobNumber).padStart(5, '0')}</p>
           </div>
         )}
+        
+        {/* Booking Information */}
+        <section className="bg-white rounded-2xl p-6 mb-6" style={{ boxShadow: 'var(--sf-shadow)', border: '1px solid var(--sf-border)' }}>
+          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--sf-ink)' }}>Booking Information</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Source */}
+            <div>
+              <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Source</label>
+              <div className="font-medium flex items-center gap-2" style={{ color: 'var(--sf-ink)' }}>
+                {job?.source === 'website' ? (
+                  <>
+                    <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                    Website Booking
+                  </>
+                ) : job?.source === 'manual' ? (
+                  <>
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                    Manual Entry
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+                    Unknown
+                  </>
+                )}
+              </div>
+            </div>
+            
+            {/* Created By */}
+            <div>
+              <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Created By</label>
+              <div className="font-medium" style={{ color: 'var(--sf-ink)' }}>
+                {job?.createdBy || (job?.source === 'website' ? 'Website Booking' : 'Unknown')}
+              </div>
+            </div>
+            
+            {/* Created Date/Time */}
+            <div className="md:col-span-2">
+              <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Created</label>
+              <div className="font-medium" style={{ color: 'var(--sf-ink)' }}>
+                {job?.createdAt
+                  ? (() => {
+                      const date = new Date(job.createdAt);
+                      const dateStr = date.toLocaleDateString(
+                        locale === 'ar' ? 'ar-SA' : locale === 'es' ? 'es-ES' : 'en-US',
+                        { month: 'short', day: 'numeric', year: 'numeric' }
+                      );
+                      const timeStr = date.toLocaleTimeString(
+                        locale === 'ar' ? 'ar-SA' : locale === 'es' ? 'es-ES' : 'en-US',
+                        { hour: 'numeric', minute: '2-digit' }
+                      );
+                      return `${dateStr} at ${timeStr}`;
+                    })()
+                  : 'Not available'}
+              </div>
+            </div>
+            
+            {/* Square Integration Status */}
+            {(job?.bookingId || job?.squareOrderId) && (
+              <div className="md:col-span-2">
+                <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Square Integration</label>
+                <div className="text-sm" style={{ color: 'var(--sf-ink)' }}>
+                  {job?.bookingId && (
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                      <span>Square Booking: Linked</span>
+                    </div>
+                  )}
+                  {job?.squareOrderId && (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                      <span>Square Order: Linked</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {!job?.bookingId && !job?.squareOrderId && (
+              <div className="md:col-span-2">
+                <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Square Integration</label>
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--sf-muted)' }}>
+                  <span className="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+                  <span>Not linked</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
         
         {/* Customer Info */}
         <section className="bg-white rounded-2xl p-6 mb-6" style={{ boxShadow: 'var(--sf-shadow)', border: '1px solid var(--sf-border)' }}>

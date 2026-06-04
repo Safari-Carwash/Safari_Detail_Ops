@@ -345,6 +345,7 @@ export async function createJobFromBooking(booking: ParsedBooking): Promise<Job>
     vehicleInfo: {}, // Will be filled in by staff later
     serviceType: booking.serviceType || 'Detail Service',
     status: mappedStatus,
+    source: 'website', // Booking created from Square website/booking flow
     bookingId: booking.bookingId,
     orderId: booking.orderId,
     squareOrderId: depositMeta.squareOrderId,

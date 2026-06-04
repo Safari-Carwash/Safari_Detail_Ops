@@ -320,6 +320,7 @@ export const POST = requireAuth(async (
       },
       serviceType: body.service.serviceName,
       status: WorkStatus.SCHEDULED,
+      source: 'manual', // Booking created manually by staff via phone
       bookingId: squareBooking.id,
       appointmentTime: body.appointmentTime.startAt,
       notes: customerNoteWithAddons, // Store notes with add-ons formatted
@@ -329,7 +330,7 @@ export const POST = requireAuth(async (
       } : undefined,
       createdAt: now,
       updatedAt: now,
-      createdBy: `manager-phone:${session.sub}`,
+      createdBy: session.name, // Staff member name who created the booking
       customerCached: {
         id: customer.id,
         name: body.customer.name,

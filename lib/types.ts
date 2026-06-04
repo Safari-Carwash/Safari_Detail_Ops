@@ -300,6 +300,7 @@ export interface Job {
   photos?: string[]; // S3 keys (legacy)
   photosMeta?: PhotoMeta[]; // Phase 3: Enhanced photo metadata
   notes?: string;
+  source?: 'website' | 'manual'; // Booking source: website (Square) or manual (staff created)
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
