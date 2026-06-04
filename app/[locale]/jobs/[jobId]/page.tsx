@@ -1158,22 +1158,28 @@ export default function JobDetail() {
             <div>
               <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Source</label>
               <div className="font-medium flex items-center gap-2" style={{ color: 'var(--sf-ink)' }}>
-                {job?.source === 'website' ? (
-                  <>
-                    <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
-                    Website Booking
-                  </>
-                ) : job?.source === 'manual' ? (
-                  <>
-                    <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-                    Manual Entry
-                  </>
-                ) : (
-                  <>
-                    <span className="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
-                    Unknown
-                  </>
-                )}
+                {(() => {
+                  // Determine source: explicit field, or infer from bookingId
+                  const explicitSource = job?.source;
+                  const inferredSource = (job?.bookingId || job?.squareOrderId) ? 'website' : 'manual';
+                  const displaySource = explicitSource || inferredSource;
+                  
+                  if (displaySource === 'website') {
+                    return (
+                      <>
+                        <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                        Website
+                      </>
+                    );
+                  } else {
+                    return (
+                      <>
+                        <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                        Manual
+                      </>
+                    );
+                  }
+                })()}
               </div>
             </div>
             
@@ -1181,7 +1187,27 @@ export default function JobDetail() {
             <div>
               <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Created By</label>
               <div className="font-medium" style={{ color: 'var(--sf-ink)' }}>
-                {job?.createdBy || (job?.source === 'website' ? 'Website Booking' : 'Unknown')}
+                {(() => {
+                  const explicitSource = job?.source;
+                  const inferredSource = (job?.bookingId || job?.squareOrderId) ? 'website' : 'manual';
+                  const displaySource = explicitSource || inferredSource;
+                  
+                  if (displaySource === 'website') {
+                    return 'Website Booking';
+                  }
+                  
+                  // For manual bookings, clean up the createdBy value
+                  if (job?.createdBy) {
+                    // If it's a raw internal ID format (contains 'manager-phone:' or UUID pattern), clean it
+                    if (job.createdBy.includes('manager-phone:') || /^[0-9a-f-]{36}$/.test(job.createdBy)) {
+                      return 'Staff / Manager';
+                    }
+                    // Otherwise assume it's already a clean staff name
+                    return job.createdBy;
+                  }
+                  
+                  return 'Staff / Manager';
+                })()}
               </div>
             </div>
             
@@ -1207,34 +1233,22 @@ export default function JobDetail() {
             </div>
             
             {/* Square Integration Status */}
-            {(job?.bookingId || job?.squareOrderId) && (
-              <div className="md:col-span-2">
-                <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Square Integration</label>
-                <div className="text-sm" style={{ color: 'var(--sf-ink)' }}>
-                  {job?.bookingId && (
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-                      <span>Square Booking: Linked</span>
-                    </div>
-                  )}
-                  {job?.squareOrderId && (
-                    <div className="flex items-center gap-2">
-                      <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-                      <span>Square Order: Linked</span>
-                    </div>
-                  )}
-                </div>
+            <div className="md:col-span-2">
+              <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Square Integration</label>
+              <div className="text-sm" style={{ color: 'var(--sf-ink)' }}>
+                {job?.bookingId ? (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                    <span>Square Booking: Linked</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2" style={{ color: 'var(--sf-muted)' }}>
+                    <span className="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+                    <span>Square Booking: Not linked</span>
+                  </div>
+                )}
               </div>
-            )}
-            {!job?.bookingId && !job?.squareOrderId && (
-              <div className="md:col-span-2">
-                <label className="text-sm" style={{ color: 'var(--sf-muted)' }}>Square Integration</label>
-                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--sf-muted)' }}>
-                  <span className="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
-                  <span>Not linked</span>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </section>
         
