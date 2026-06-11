@@ -24,6 +24,8 @@ export interface ParsedBooking {
   sellerId?: string;
   version?: number;
   orderId?: string; // Square order ID associated with the booking (deposit/payment)
+  // Structured add-on names parsed from seller_note or structured booking data
+  addonNames?: string[];
 }
 
 /**
@@ -99,4 +101,74 @@ export function isValidBooking(booking: ParsedBooking): boolean {
     booking.appointmentTime &&
     booking.status
   );
+}
+
+/**
+ * Parse add-on names from a Square seller_note or appointment note.
+ *
+ * Handles both formats produced by the Safari website:
+ *   - "ADD-ONS (customer selected):\n• Odor Eliminator\n• Disinfectant Service"
+ *   - "✅ ADD-ONS REQUESTED:\n• Odor Eliminator"
+ *
+ * Bullet styles supported: •  -  *
+ *
+ * Parsing stops at the first blank line or when a known stop phrase is encountered:
+ *   "Add-ons not charged today", "Collect add-on payment at service time",
+ *   "CARD ON FILE", "Vehicle:", "Pricing note"
+ *
+ * @param note - Raw seller_note or appointment note string from Square
+ * @returns Deduplicated, trimmed add-on names; empty array when none found
+ */
+export function parseAddonsFromSellerNote(note: string | undefined): string[] {
+  if (!note) return [];
+
+  const STOP_PHRASES = [
+    'add-ons not charged today',
+    'collect add-on payment at service time',
+    'card on file',
+    'vehicle:',
+    'pricing note',
+  ];
+
+  const lines = note.split('\n');
+  const addons: string[] = [];
+  let inSection = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (!inSection) {
+      // Detect the add-ons section heading (both legacy and current formats)
+      const isHeading =
+        /ADD[-\s]ONS\s+\(customer\s+selected\)\s*:/i.test(line) ||
+        /[✅✓]?\s*ADD[-\s]ONS\s+REQUESTED\s*:/i.test(line);
+
+      if (isHeading) {
+        inSection = true;
+      }
+      continue;
+    }
+
+    // Stop on blank line
+    if (line === '') break;
+
+    // Stop on known stop phrases
+    const lowerLine = line.toLowerCase();
+    if (STOP_PHRASES.some(phrase => lowerLine.includes(phrase))) break;
+
+    // Accept bullet lines (•, -, *)
+    if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
+      const name = line.replace(/^[•\-*]\s*/, '').trim();
+      if (name) addons.push(name);
+    }
+  }
+
+  // Deduplicate while preserving order
+  const seen = new Set<string>();
+  return addons.filter(name => {
+    const key = name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

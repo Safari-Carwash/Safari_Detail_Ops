@@ -356,6 +356,8 @@ export async function createJobFromBooking(booking: ParsedBooking): Promise<Job>
     photos: [],
     photosMeta: [], // Phase 3: Initialize empty photo metadata
     notes: booking.notes,
+    // Structured add-on names from seller_note or order (empty array = no add-ons)
+    addonNames: booking.addonNames ?? [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     customerCached, // Phase 3: Cache customer data on job creation
@@ -429,6 +431,11 @@ export async function updateJobFromBooking(
     // Preserve existing source field if it was set (don't overwrite phone bookings with 'website')
     ...(currentJob?.source && {
       source: currentJob.source,
+    }),
+    // Update structured add-on names only when the incoming booking has them
+    // (prevents a webhook.updated with no seller_note from clearing existing add-ons)
+    ...(booking.addonNames && booking.addonNames.length > 0 && {
+      addonNames: booking.addonNames,
     }),
     // Add cancellation metadata if newly cancelled (idempotent)
     ...(isCancelled && !wasAlreadyCancelled && {
@@ -742,6 +749,12 @@ export async function updateJobWithAudit(
   // Update service type
   if (updates.serviceType !== undefined) {
     updateData.serviceType = updates.serviceType;
+  }
+
+  // Update structured addonNames when explicitly provided via PATCH
+  // (used by the vehicle edit modal — keeps structured field in sync with notes)
+  if (Array.isArray((updates as any).addonNames)) {
+    updateData.addonNames = (updates as any).addonNames;
   }
 
   // Handle payment status updates

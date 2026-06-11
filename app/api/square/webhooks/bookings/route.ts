@@ -25,7 +25,8 @@ import {
 import {
   parseBookingEvent,
   determineBookingAction,
-  isValidBooking
+  isValidBooking,
+  parseAddonsFromSellerNote
 } from '@/lib/square/booking-parser';
 import {
   fetchCustomerDetails,
@@ -253,23 +254,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           parsedBooking.orderId = fullBooking.order_id;
         }
         
-        // Check if seller_note contains add-ons (Square website puts them there)
-        if (fullBooking.seller_note && fullBooking.seller_note.includes('ADD-ONS REQUESTED')) {
-          console.log('[ADD-ONS FOUND IN SELLER NOTE]', {
-            bookingId: parsedBooking.bookingId,
-            sellerNotePreview: fullBooking.seller_note.substring(0, 200),
-          });
-          
-          // Extract the add-ons section from seller_note
-          const addonsMatch = fullBooking.seller_note.match(/✅\s*ADD-ONS\s+REQUESTED:\s*([\s\S]*?)(?:\n\n⚠️|$)/i);
-          
-          if (addonsMatch && addonsMatch[1]) {
-            const addonsSection = `\n\n✅ ADD-ONS REQUESTED:\n${addonsMatch[1].trim()}\n\n⚠️ Add-ons charged separately`;
-            completeNotes = (completeNotes + addonsSection).trim();
-            
-            console.log('[ADD-ONS EXTRACTED FROM SELLER NOTE]', {
+        // --- Structured add-on extraction from seller_note ---
+        // The Safari website writes add-on names into the Square seller_note in this format:
+        //   ADD-ONS (customer selected):
+        //   • Odor Eliminator
+        //   • Disinfectant Service
+        //
+        // Parse this into a structured addonNames array (priority 1 source).
+        if (fullBooking.seller_note) {
+          const parsedAddonNames = parseAddonsFromSellerNote(fullBooking.seller_note);
+
+          if (parsedAddonNames.length > 0) {
+            parsedBooking.addonNames = parsedAddonNames;
+
+            console.log('[ADD-ONS PARSED FROM SELLER NOTE]', {
               bookingId: parsedBooking.bookingId,
-              addonsText: addonsMatch[1].trim(),
+              count: parsedAddonNames.length,
+              names: parsedAddonNames,
+            });
+          } else {
+            console.log('[ADD-ONS] No add-ons found in seller_note', {
+              bookingId: parsedBooking.bookingId,
+              sellerNotePreview: fullBooking.seller_note.substring(0, 200),
             });
           }
         }
@@ -297,21 +303,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               );
               
               if (addonItems.length > 0) {
-                const addonNames = addonItems
+                const orderAddonNames = addonItems
                   .map(item => item.name || 'Unknown Add-on')
                   .filter(name => name);
                 
-                // Format add-ons in notes format (matching phone booking format)
-                const addonsText = `\n\n✅ ADD-ONS REQUESTED:\n${addonNames.map(name => `• ${name}`).join('\n')}\n\n⚠️ Add-ons charged separately`;
-                
-                completeNotes = (completeNotes + addonsText).trim();
-                
-                console.log('[ADD-ONS EXTRACTED FROM ORDER]', {
-                  bookingId: parsedBooking.bookingId,
-                  orderId: order.id,
-                  addonCount: addonNames.length,
-                  addons: addonNames,
-                });
+                // Only use order add-ons if seller_note didn't already produce structured add-ons
+                if (!parsedBooking.addonNames || parsedBooking.addonNames.length === 0) {
+                  parsedBooking.addonNames = orderAddonNames;
+
+                  console.log('[ADD-ONS EXTRACTED FROM ORDER]', {
+                    bookingId: parsedBooking.bookingId,
+                    orderId: order.id,
+                    addonCount: orderAddonNames.length,
+                    addons: orderAddonNames,
+                  });
+                } else {
+                  console.log('[ADD-ONS FROM ORDER SKIPPED - seller_note already parsed]', {
+                    bookingId: parsedBooking.bookingId,
+                    existingCount: parsedBooking.addonNames.length,
+                  });
+                }
               } else {
                 console.log('[NO ADD-ONS IN ORDER]', {
                   bookingId: parsedBooking.bookingId,
@@ -329,14 +340,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           }
         }
         
-        // Update notes with complete customer_note + add-ons
+        // Update notes with complete customer_note content
         if (completeNotes) {
           parsedBooking.notes = completeNotes;
           console.log('[BOOKING NOTES ENRICHED]', {
             bookingId: parsedBooking.bookingId,
             notesLength: completeNotes.length,
             notesPreview: completeNotes.substring(0, 100),
-            hasAddons: completeNotes.includes('ADD-ONS'),
           });
         } else {
           console.warn('[BOOKING NOTES EMPTY]', {
@@ -344,6 +354,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             note: 'Square API returned booking but customer_note is empty and no order',
           });
         }
+
+        // Structured logging for add-on ingestion
+        console.log('[ADDON INGESTION SUMMARY]', {
+          squareBookingId: parsedBooking.bookingId,
+          bookingSource: 'website',
+          structuredAddonCount: parsedBooking.addonNames?.length ?? 0,
+          parsedAddonCount: 0, // reserved for future Square-note-only path
+          finalAddonNames: parsedBooking.addonNames ?? [],
+        });
       } else {
         console.warn('[BOOKING NOT FOUND]', {
           bookingId: parsedBooking.bookingId,

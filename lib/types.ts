@@ -325,6 +325,8 @@ export interface Job {
   cancelledAt?: string;
   cancelledSource?: 'square' | 'manual';
   cancellationReason?: string;
+  // Add-ons: structured names extracted from booking (website or Square notes)
+  addonNames?: string[];
 }
 
 /**
