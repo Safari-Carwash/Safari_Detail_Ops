@@ -175,7 +175,8 @@ async function enrichBookingDepositFromSquareData(booking: ParsedBooking) {
  */
 export async function calculateBookingAmount(
   serviceVariationId: string | undefined,
-  notes: string | undefined
+  notes: string | undefined,
+  addonNames?: string[]
 ): Promise<number | undefined> {
   try {
     let subtotalCents = 0;
@@ -215,46 +216,53 @@ export async function calculateBookingAmount(
       });
     }
 
-    // 2. Parse add-ons from notes and get prices
-    if (notes && notes.includes('ADD-ONS REQUESTED')) {
-      // Extract add-on names from notes
+    // 2. Resolve add-on names.
+    // Priority: structured addonNames param > parse from legacy notes format.
+    let resolvedAddonNames: string[] = [];
+
+    if (addonNames && addonNames.length > 0) {
+      // Structured field — no parsing required
+      resolvedAddonNames = addonNames;
+      console.log('[PAYMENT CALC] Using structured addonNames', {
+        count: resolvedAddonNames.length,
+        names: resolvedAddonNames,
+      });
+    } else if (notes && notes.includes('ADD-ONS REQUESTED')) {
+      // Legacy notes format fallback
       const addonsMatch = notes.match(/✅\s*ADD-ONS\s+REQUESTED:\s*([\s\S]*?)(?:\n\n⚠️|$)/i);
-      
       if (addonsMatch && addonsMatch[1]) {
-        const addonLines = addonsMatch[1]
+        resolvedAddonNames = addonsMatch[1]
           .split('\n')
           .map(line => line.trim())
           .filter(line => line.startsWith('•') || line.startsWith('-') || line.startsWith('*'))
-          .map(line => line.substring(1).trim()); // Remove bullet point
+          .map(line => line.substring(1).trim());
+        console.log('[PAYMENT CALC] Found add-ons in legacy notes', {
+          count: resolvedAddonNames.length,
+          names: resolvedAddonNames,
+        });
+      }
+    }
 
-        if (addonLines.length > 0) {
-          console.log('[PAYMENT CALC] Found add-ons in notes', {
-            count: addonLines.length,
-            names: addonLines,
+    // 3. Price the add-ons
+    if (resolvedAddonNames.length > 0) {
+      const availableAddons = await listAddons();
+      const addonMap = new Map(
+        availableAddons.map(addon => [addon.name.toLowerCase(), addon.priceMoney?.amount || 0])
+      );
+
+      for (const addonName of resolvedAddonNames) {
+        const price = addonMap.get(addonName.toLowerCase());
+        if (price) {
+          subtotalCents += price;
+          console.log('[PAYMENT CALC] Add-on price', {
+            name: addonName,
+            priceCents: price,
           });
-
-          // Fetch all available add-ons to match names to prices
-          const availableAddons = await listAddons();
-          const addonMap = new Map(
-            availableAddons.map(addon => [addon.name.toLowerCase(), addon.priceMoney?.amount || 0])
-          );
-
-          // Sum add-on prices
-          for (const addonName of addonLines) {
-            const price = addonMap.get(addonName.toLowerCase());
-            if (price) {
-              subtotalCents += price;
-              console.log('[PAYMENT CALC] Add-on price', {
-                name: addonName,
-                priceCents: price,
-              });
-            } else {
-              console.warn('[PAYMENT CALC] Add-on price not found', {
-                name: addonName,
-                note: 'Add-on may be inactive or renamed',
-              });
-            }
-          }
+        } else {
+          console.warn('[PAYMENT CALC] Add-on price not found', {
+            name: addonName,
+            note: 'Add-on may be inactive or renamed',
+          });
         }
       }
     }
@@ -329,7 +337,9 @@ export async function createJobFromBooking(booking: ParsedBooking): Promise<Job>
     (booking.customerId ? `Customer ${booking.customerId.substring(0, 8)}...` : 'Unknown Customer');
   
   // Calculate payment amount from service + add-ons + tax
-  const amountCents = await calculateBookingAmount(booking.serviceVariationId, booking.notes);
+  // Pass structured addonNames (priority) so prices are correct even when
+  // add-ons are not embedded in notes text.
+  const amountCents = await calculateBookingAmount(booking.serviceVariationId, booking.notes, booking.addonNames);
   const depositMeta = await enrichBookingDepositFromSquareData(booking);
   
   const mappedStatus = mapBookingStatusToJobStatus(booking.status);
@@ -404,7 +414,7 @@ export async function updateJobFromBooking(
   // Recalculate payment amount if not yet paid (in case add-ons or service changed)
   let paymentUpdate: Partial<Job>['payment'] | undefined;
   if (!currentJob?.payment || currentJob.payment.status === PaymentStatus.UNPAID) {
-    const amountCents = await calculateBookingAmount(booking.serviceVariationId, booking.notes);
+    const amountCents = await calculateBookingAmount(booking.serviceVariationId, booking.notes, booking.addonNames);
     if (amountCents) {
       paymentUpdate = {
         status: PaymentStatus.UNPAID,
