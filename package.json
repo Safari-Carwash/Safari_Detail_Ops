@@ -11,6 +11,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test:webhook": "ts-node test/webhook-test.ts",
     "test:integration": "ts-node test/integration-test.ts",
+    "test:addons": "npx tsx test/addon-parser.test.ts",
     "seed-admin": "ts-node scripts/seed-admin-user.ts",
     "check-booking-profile": "ts-node scripts/check-booking-profile.ts",
     "refresh-notes": "npx tsx scripts/refresh-booking-notes.ts",

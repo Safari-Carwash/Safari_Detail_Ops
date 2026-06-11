@@ -29,6 +29,8 @@ interface Job {
   customerPhone?: string;
   customerEmail?: string;
   notes?: string;
+  // Structured add-on names (populated during booking ingestion or Square fallback)
+  addonNames?: string[];
   vehicleInfo: {
     make?: string;
     model?: string;
@@ -174,54 +176,56 @@ export default function JobDetail() {
   const [showEditBookingModal, setShowEditBookingModal] = useState(false);
 
   /**
-   * Parse add-ons from booking notes
-   * Format: "✅ ADD-ONS REQUESTED:\n• Addon 1\n• Addon 2"
+   * Parse add-ons from booking notes — client-side fallback only.
+   * Handles both note formats:
+   *   1. "ADD-ONS (customer selected):\n• Name" — Square appointment notes
+   *   2. "✅ ADD-ONS REQUESTED:\n• Name"       — legacy Detail Ops format
+   *
+   * Stops parsing at known stop phrases so vehicle/card text is never treated as add-ons.
    */
   const parseAddonsFromNotes = (notes: string | undefined): Array<{ name: string }> => {
-    console.log('[ADDONS PARSER] Parsing notes', {
-      hasNotes: !!notes,
-      notesLength: notes?.length,
-      notesPreview: notes?.substring(0, 200),
-    });
-    
-    if (!notes) {
-      console.log('[ADDONS PARSER] No notes to parse');
-      return [];
+    if (!notes) return [];
+
+    const STOP_PHRASES = [
+      'add-ons not charged today',
+      'collect add-on payment at service time',
+      'card on file',
+      'vehicle:',
+      'pricing note',
+    ];
+
+    const lines = notes.split('\n');
+    const addons: string[] = [];
+    let inSection = false;
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!inSection) {
+        const isHeading =
+          /ADD[-\s]ONS\s+\(customer\s+selected\)\s*:/i.test(line) ||
+          /[✅✓]?\s*ADD[-\s]ONS\s+REQUESTED\s*:/i.test(line);
+        if (isHeading) inSection = true;
+        continue;
+      }
+      if (line === '') break;
+      const lower = line.toLowerCase();
+      if (STOP_PHRASES.some(p => lower.includes(p))) break;
+      if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
+        const name = line.replace(/^[•\-*]\s*/, '').trim();
+        if (name) addons.push(name);
+      }
     }
-    
-    // Look for the add-ons section (support both emoji and text variants)
-    const addonsMatch = notes.match(/[✅✓]\s*ADD[-\s]ONS\s+REQUESTED:\s*([\s\S]*?)(?:\n\n|⚠️|$)/i);
-    
-    console.log('[ADDONS PARSER] Regex match result', {
-      matched: !!addonsMatch,
-      matchedText: addonsMatch?.[1]?.substring(0, 100),
-    });
-    
-    if (!addonsMatch) {
-      console.log('[ADDONS PARSER] No add-ons section found in notes');
-      return [];
-    }
-    
-    const addonsText = addonsMatch[1];
-    
-    // Extract individual add-ons (lines starting with • or -)
-    const addonLines = addonsText.split('\n').filter(line => {
-      const trimmed = line.trim();
-      return trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*');
-    });
-    
-    console.log('[ADDONS PARSER] Extracted addon lines', {
-      count: addonLines.length,
-      lines: addonLines,
-    });
-    
-    const parsedAddons = addonLines.map(line => ({
-      name: line.replace(/^[•\-*]\s*/, '').trim(),
-    }));
-    
-    console.log('[ADDONS PARSER] Final parsed add-ons', parsedAddons);
-    
-    return parsedAddons;
+
+    // Deduplicate
+    const seen = new Set<string>();
+    return addons
+      .filter(name => {
+        const key = name.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map(name => ({ name }));
   };
 
   // Format last updated time
@@ -289,6 +293,7 @@ export default function JobDetail() {
           customerPhone: apiJob.customerCached?.phone || apiJob.customerPhone,
           customerEmail: apiJob.customerCached?.email || apiJob.customerEmail,
           notes: apiJob.notes,
+          addonNames: apiJob.addonNames,
           vehicleInfo: apiJob.vehicleInfo || {},
           serviceType: apiJob.serviceType || 'Service details pending',
           scheduledStart: apiJob.appointmentTime || apiJob.createdAt,
@@ -323,35 +328,33 @@ export default function JobDetail() {
     fetchJob();
   }, [jobId]);
 
-  // Parse add-ons from job notes when job is loaded or updated
+  // Resolve add-ons when job is loaded or updated.
+  // Priority:
+  //   1. Structured addonNames from the job record (set during booking ingestion or Square fallback)
+  //   2. Client-side notes parser (legacy / manual bookings)
   useEffect(() => {
     if (!job) {
       setAddons([]);
       return;
     }
-    
+
+    // Priority 1: structured field
+    if (job.addonNames && job.addonNames.length > 0) {
+      setAddons(job.addonNames.map(name => ({ name })));
+      return;
+    }
+
+    // Priority 2: notes fallback (handles both "ADD-ONS (customer selected):" and legacy format)
     setLoadingAddons(true);
-    
     try {
-      console.log('[JOB DETAILS] Parsing add-ons from notes', {
-        jobId: job.jobId,
-        hasNotes: !!job.notes,
-      });
-      
       const parsedAddons = parseAddonsFromNotes(job.notes);
-      
       setAddons(parsedAddons);
-      console.log('[JOB DETAILS] Add-ons parsed from notes', {
-        count: parsedAddons.length,
-        addons: parsedAddons,
-      });
-    } catch (error) {
-      console.error('[JOB DETAILS] Failed to parse add-ons', error);
+    } catch {
       setAddons([]);
     } finally {
       setLoadingAddons(false);
     }
-  }, [job?.notes, job?.jobId]);
+  }, [job?.addonNames, job?.notes, job?.jobId]);
 
   // Phase 4: Polling for real-time updates
   const pollingFetcher = useCallback(async (): Promise<Job> => {
@@ -392,6 +395,7 @@ export default function JobDetail() {
         customerPhone: apiJob.customerCached?.phone || apiJob.customerPhone,
         customerEmail: apiJob.customerCached?.email || apiJob.customerEmail,
         notes: apiJob.notes,
+        addonNames: apiJob.addonNames,
         vehicleInfo: apiJob.vehicleInfo || {},
         serviceType: apiJob.serviceType || 'Service details pending',
         scheduledStart: apiJob.appointmentTime || apiJob.createdAt,
@@ -1049,6 +1053,7 @@ export default function JobDetail() {
           vehicleInfo: data.data.job.vehicleInfo,
           serviceType: data.data.job.serviceType,
           notes: data.data.job.notes,
+          addonNames: data.data.job.addonNames,
           payment: data.data.job.payment,
         } : null);
         showToast('Vehicle info updated successfully', 'success');
@@ -1349,6 +1354,26 @@ export default function JobDetail() {
             </div>
           </div>
         </section>
+
+        {/* Add-ons — shown whenever at least one add-on is present, regardless of job status */}
+        {addons.length > 0 && (
+          <section className="bg-white rounded-2xl p-6 mb-6" style={{ boxShadow: 'var(--sf-shadow)', border: '2px solid #F47C20' }}>
+            <h2 className="text-lg font-semibold mb-3" style={{ color: 'var(--sf-ink)' }}>
+              Add-ons
+            </h2>
+            <ul className="space-y-2">
+              {addons.map((addon, index) => (
+                <li key={`addon-display-${index}`} className="flex items-center gap-2 text-base font-medium" style={{ color: 'var(--sf-ink)' }}>
+                  <span className="text-[#F47C20] text-lg leading-none">•</span>
+                  {addon.name}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-sm" style={{ color: 'var(--sf-muted)' }}>
+              Collect add-on payment at service time.
+            </p>
+          </section>
+        )}
 
         {/* Vehicle Info */}
         <section className="bg-white rounded-2xl p-6 mb-6" style={{ boxShadow: 'var(--sf-shadow)', border: '1px solid var(--sf-border)' }}>

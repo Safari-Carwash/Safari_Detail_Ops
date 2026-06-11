@@ -14,6 +14,7 @@ import { updateJobWithAudit } from '@/lib/services/job-service';
 import * as dynamodb from '@/lib/aws/dynamodb';
 import { listServices } from '@/lib/square/catalog-api';
 import { retrieveBooking, updateBooking } from '@/lib/square/bookings-api';
+import { parseAddonsFromSellerNote } from '@/lib/square/booking-parser';
 import * as notificationService from '@/lib/services/notification-service';
 
 // Force dynamic rendering for this route
@@ -53,6 +54,35 @@ export async function GET(
         timestamp: new Date().toISOString(),
       };
       return NextResponse.json(response, { status: 404 });
+    }
+
+    // Backward-compatibility fallback for legacy jobs that pre-date structured addonNames.
+    // When the job is a website booking (has bookingId) but has no addonNames stored,
+    // fetch the Square booking's seller_note and parse add-ons from it at read time.
+    // This does NOT write back to DynamoDB — it is a live enrichment only.
+    if (job.bookingId && (!job.addonNames || job.addonNames.length === 0)) {
+      try {
+        const squareBooking = await retrieveBooking(job.bookingId);
+        if (squareBooking?.seller_note) {
+          const parsedNames = parseAddonsFromSellerNote(squareBooking.seller_note);
+          if (parsedNames.length > 0) {
+            job.addonNames = parsedNames;
+            console.log('[JOB GET] Add-ons hydrated from Square seller_note (legacy fallback)', {
+              jobId,
+              bookingId: job.bookingId,
+              count: parsedNames.length,
+              names: parsedNames,
+            });
+          }
+        }
+      } catch (fallbackError: any) {
+        // Non-fatal: log and continue without add-ons
+        console.warn('[JOB GET] Square fallback for add-ons failed', {
+          jobId,
+          bookingId: job.bookingId,
+          error: fallbackError.message,
+        });
+      }
     }
 
     const response: ApiResponse = {
